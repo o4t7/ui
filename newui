@@ -1,0 +1,2366 @@
+--[[
+    OTGUI Framework Library v3.0.0
+    
+    Upload this file to GitHub, then load it with:
+    local OTGUI = loadstring(game:HttpGet("YOUR_RAW_URL"))()
+    
+    Then build your GUI:
+    OTGUI:CreateTab("Punches", "Punches")
+    local win = OTGUI:CreateWindow({Id = "Punches", Title = "Punches", Width = 420, Height = 550})
+    OTGUI:AddToggle(win, {Text = "Auto Dodge", Id = "AutoDodge", Order = 1, Callback = function(v) end})
+    OTGUI:AddSlider(win, {Text = "Range", Id = "Range", Min = 1, Max = 30, Default = 10, Parent = "AutoDodge", Callback = function(v) end})
+]]
+
+local function CreateOTGUI()
+
+-- Services
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local HttpService = game:GetService("HttpService")
+local CoreGui = game:GetService("CoreGui")
+local Lighting = game:GetService("Lighting")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+
+local Player = Players.LocalPlayer
+local Character = Player.Character or Player.CharacterAdded:Wait()
+
+-- Queue on Teleport
+local queueteleport = queue_on_teleport or (syn and syn.queue_on_teleport) or (fluxus and fluxus.queue_on_teleport)
+
+-- File System
+local writefile = writefile or function() end
+local readfile = readfile or function() return "{}" end
+local isfile = isfile or function() return false end
+local makefolder = makefolder or function() end
+local isfolder = isfolder or function() return false end
+local listfiles = listfiles or function() return {} end
+local delfile = delfile or function() end
+
+pcall(function()
+    if not isfolder("OTGUI") then makefolder("OTGUI") end
+    if not isfolder("OTGUI/Configs") then makefolder("OTGUI/Configs") end
+end)
+
+-- Base Scale
+local BASE_SCALE = 1.5
+
+-- Colors
+local Colors = {
+    Background = Color3.fromRGB(18, 18, 18),
+    Surface = Color3.fromRGB(28, 28, 28),
+    SurfaceLight = Color3.fromRGB(40, 40, 40),
+    SurfaceLighter = Color3.fromRGB(55, 55, 55),
+    Border = Color3.fromRGB(65, 65, 65),
+    Text = Color3.fromRGB(255, 255, 255),
+    TextDim = Color3.fromRGB(140, 140, 140),
+    Accent = Color3.fromRGB(255, 255, 255),
+    Star = Color3.fromRGB(255, 200, 50),
+    UltraLegit = Color3.fromRGB(76, 217, 100),
+    Legit = Color3.fromRGB(120, 220, 120),
+    SemiLegit = Color3.fromRGB(255, 204, 0),
+    SemiBlatant = Color3.fromRGB(255, 149, 0),
+    Blatant = Color3.fromRGB(255, 59, 48),
+    Rage = Color3.fromRGB(200, 30, 30)
+}
+
+-- State
+local State = {
+    Visible = true,
+    Favorites = {},
+    ConfigData = {},
+    WindowPositions = {},
+    WindowVisibility = {},
+    LegitScores = {},
+    TotalLegitScore = 0,
+    BlurEnabled = true,
+    ToggleKey = Enum.KeyCode.RightShift,
+    GUIScale = 100,
+    AutoLoadConfig = "",
+    UsageStats = {},
+    WindowSortModes = {},
+    ToggleKeybinds = {}
+}
+
+local PendingGUIScale = State.GUIScale
+local ListeningForKeybind = nil
+
+-- Mobile detection
+local IsMobile = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
+
+local function Tween(inst, props, dur)
+    TweenService:Create(inst, TweenInfo.new(dur or 0.2, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), props):Play()
+end
+
+local function Scale(value)
+    return math.floor(value * BASE_SCALE * (State.GUIScale / 100))
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- CONFIG FUNCTIONS
+-- ═══════════════════════════════════════════════════════════════
+
+local function GetConfigs()
+    local configs = {}
+    pcall(function()
+        for _, file in ipairs(listfiles("OTGUI/Configs")) do
+            local name = file:match("([^/\\]+)%.json$")
+            if name then table.insert(configs, name) end
+        end
+    end)
+    return configs
+end
+
+local function SaveConfig(name)
+    pcall(function()
+        writefile("OTGUI/Configs/" .. name .. ".json", HttpService:JSONEncode({
+            Favorites = State.Favorites,
+            ConfigData = State.ConfigData,
+            WindowPositions = State.WindowPositions,
+            WindowVisibility = State.WindowVisibility,
+            BlurEnabled = State.BlurEnabled,
+            GUIScale = State.GUIScale,
+            UsageStats = State.UsageStats,
+            WindowSortModes = State.WindowSortModes,
+            ToggleKeybinds = State.ToggleKeybinds
+        }))
+    end)
+end
+
+local function LoadConfig(name)
+    pcall(function()
+        if isfile("OTGUI/Configs/" .. name .. ".json") then
+            local data = HttpService:JSONDecode(readfile("OTGUI/Configs/" .. name .. ".json"))
+            State.Favorites = data.Favorites or {}
+            State.ConfigData = data.ConfigData or {}
+            State.WindowPositions = data.WindowPositions or {}
+            State.WindowVisibility = data.WindowVisibility or {}
+            State.BlurEnabled = data.BlurEnabled ~= false
+            State.GUIScale = data.GUIScale or 100
+            State.UsageStats = data.UsageStats or {}
+            State.WindowSortModes = data.WindowSortModes or {}
+            State.ToggleKeybinds = data.ToggleKeybinds or {}
+            PendingGUIScale = State.GUIScale
+            if State.ConfigData["ToggleGUIKey"] then
+                pcall(function()
+                    State.ToggleKey = Enum.KeyCode[State.ConfigData["ToggleGUIKey"]]
+                end)
+            end
+        end
+    end)
+end
+
+local function DeleteConfig(name)
+    pcall(function()
+        if isfile("OTGUI/Configs/" .. name .. ".json") then
+            delfile("OTGUI/Configs/" .. name .. ".json")
+        end
+    end)
+end
+
+local function SetAutoLoad(name)
+    pcall(function() writefile("OTGUI/autoload.txt", name or "") end)
+    State.AutoLoadConfig = name
+end
+
+local function GetAutoLoad()
+    local name = ""
+    pcall(function()
+        if isfile("OTGUI/autoload.txt") then name = readfile("OTGUI/autoload.txt") end
+    end)
+    return name
+end
+
+local function SaveSettings()
+    pcall(function()
+        writefile("OTGUI/settings.json", HttpService:JSONEncode({
+            BlurEnabled = State.BlurEnabled,
+            GUIScale = State.GUIScale,
+            AutoLoadConfig = State.AutoLoadConfig,
+            Favorites = State.Favorites,
+            ConfigData = State.ConfigData,
+            WindowPositions = State.WindowPositions,
+            WindowVisibility = State.WindowVisibility,
+            UsageStats = State.UsageStats,
+            WindowSortModes = State.WindowSortModes,
+            ToggleKeybinds = State.ToggleKeybinds
+        }))
+    end)
+end
+
+local function LoadSettings()
+    pcall(function()
+        if isfile("OTGUI/settings.json") then
+            local data = HttpService:JSONDecode(readfile("OTGUI/settings.json"))
+            State.BlurEnabled = data.BlurEnabled ~= false
+            State.GUIScale = data.GUIScale or 100
+            State.AutoLoadConfig = data.AutoLoadConfig or ""
+            State.Favorites = data.Favorites or {}
+            State.ConfigData = data.ConfigData or {}
+            State.WindowPositions = data.WindowPositions or {}
+            State.WindowVisibility = data.WindowVisibility or {}
+            State.UsageStats = data.UsageStats or {}
+            State.WindowSortModes = data.WindowSortModes or {}
+            State.ToggleKeybinds = data.ToggleKeybinds or {}
+            PendingGUIScale = State.GUIScale
+            if State.ConfigData["ToggleGUIKey"] then
+                pcall(function()
+                    State.ToggleKey = Enum.KeyCode[State.ConfigData["ToggleGUIKey"]]
+                end)
+            end
+        end
+    end)
+end
+
+LoadSettings()
+
+local autoLoadName = GetAutoLoad()
+if autoLoadName ~= "" then LoadConfig(autoLoadName) end
+
+-- Destroy existing
+if CoreGui:FindFirstChild("OTGUI") then CoreGui:FindFirstChild("OTGUI"):Destroy() end
+if CoreGui:FindFirstChild("OTGUI_MobileBtn") then CoreGui:FindFirstChild("OTGUI_MobileBtn"):Destroy() end
+if Lighting:FindFirstChild("OTGUIBlur") then Lighting:FindFirstChild("OTGUIBlur"):Destroy() end
+
+-- Main GUI
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "OTGUI"
+ScreenGui.Parent = CoreGui
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+ScreenGui.ResetOnSpawn = false
+ScreenGui.IgnoreGuiInset = true
+
+pcall(function() if syn and syn.protect_gui then syn.protect_gui(ScreenGui) end end)
+
+local InitialGUIScale = State.GUIScale
+
+local GUIScaleObject = Instance.new("UIScale")
+GUIScaleObject.Name = "GUIScale"
+GUIScaleObject.Scale = 1
+GUIScaleObject.Parent = ScreenGui
+
+local function ApplyGUIScale(newScale)
+    State.GUIScale = newScale
+    PendingGUIScale = newScale
+    local relativeScale = newScale / InitialGUIScale
+    Tween(GUIScaleObject, {Scale = relativeScale}, 0.15)
+    SaveSettings()
+end
+
+local function GetCurrentScale()
+    return GUIScaleObject.Scale
+end
+
+local function GetScaledPosition(guiObject)
+    local scale = GetCurrentScale()
+    return guiObject.AbsolutePosition / scale, guiObject.AbsoluteSize / scale
+end
+
+local function GetScaledMouseOffset(mousePos, guiObject)
+    local scale = GetCurrentScale()
+    local scaledPos = guiObject.AbsolutePosition
+    local scaledSize = guiObject.AbsoluteSize
+    return (mousePos.X - scaledPos.X) / scaledSize.X
+end
+
+-- Blur
+local Blur = Instance.new("BlurEffect")
+Blur.Name = "OTGUIBlur"
+Blur.Size = State.BlurEnabled and 6 or 0
+Blur.Parent = Lighting
+
+local function UpdateBlur()
+    Tween(Blur, {Size = (State.BlurEnabled and State.Visible) and 6 or 0}, 0.3)
+end
+
+-- Forward declarations
+local Windows = {}
+local AllElements = {}
+local FavoritesWindow = nil
+
+local SlotIndex = 0
+local function GetNextWindowPosition(width, height)
+    SlotIndex = SlotIndex + 1
+    local screenSize = workspace.CurrentCamera.ViewportSize
+    local topBarHeight = Scale(65)
+    
+    local occupiedAreas = {}
+    for _, win in pairs(Windows) do
+        if win.Frame and win.Frame.Visible then
+            table.insert(occupiedAreas, {
+                x = win.Frame.Position.X.Offset,
+                y = win.Frame.Position.Y.Offset,
+                w = win.Frame.Size.X.Offset,
+                h = win.Frame.Size.Y.Offset
+            })
+        end
+    end
+    
+    for id, pos in pairs(State.WindowPositions) do
+        if State.WindowVisibility[id] then
+            table.insert(occupiedAreas, {
+                x = pos.X or 0,
+                y = pos.Y or 0,
+                w = pos.Width or width,
+                h = pos.Height or height
+            })
+        end
+    end
+    
+    local function CheckOverlap(x, y, w, h)
+        local overlapScore = 0
+        for _, area in pairs(occupiedAreas) do
+            local overlapX = math.max(0, math.min(x + w, area.x + area.w) - math.max(x, area.x))
+            local overlapY = math.max(0, math.min(y + h, area.y + area.h) - math.max(y, area.y))
+            overlapScore = overlapScore + (overlapX * overlapY)
+        end
+        return overlapScore
+    end
+    
+    local bestX, bestY = 20, topBarHeight
+    local bestOverlap = math.huge
+    local gridSpacing = 50
+    
+    for testY = topBarHeight, screenSize.Y - height - 20, gridSpacing do
+        for testX = 20, screenSize.X - width - 20, gridSpacing do
+            local overlap = CheckOverlap(testX, testY, width, height)
+            if overlap < bestOverlap then
+                bestOverlap = overlap
+                bestX = testX
+                bestY = testY
+                if overlap == 0 then break end
+            end
+        end
+        if bestOverlap == 0 then break end
+    end
+    
+    if bestOverlap > 0 then
+        local cols = math.max(1, math.floor((screenSize.X - 40) / (width + 20)))
+        local row = math.floor((SlotIndex - 1) / cols)
+        local col = (SlotIndex - 1) % cols
+        bestX = 20 + col * (width + 15)
+        bestY = topBarHeight + row * (height + 15)
+    end
+    
+    return bestX, bestY
+end
+
+local function OrganizeWindows()
+    local screenSize = workspace.CurrentCamera.ViewportSize
+    local topBarHeight = Scale(65)
+    local padding = Scale(15)
+    local startX = 20
+    local currentX = startX
+    local currentY = topBarHeight
+    local maxRowHeight = 0
+    
+    local visibleWindows = {}
+    for id, win in pairs(Windows) do
+        if win.Frame and win.Frame.Visible then
+            table.insert(visibleWindows, {id = id, win = win})
+        end
+    end
+    table.sort(visibleWindows, function(a, b) return a.id < b.id end)
+    
+    for _, data in ipairs(visibleWindows) do
+        local win = data.win
+        local winWidth = win.Frame.Size.X.Offset
+        local winHeight = win.Frame.Size.Y.Offset
+        
+        if currentX + winWidth > screenSize.X - 20 then
+            currentX = startX
+            currentY = currentY + maxRowHeight + padding
+            maxRowHeight = 0
+        end
+        
+        Tween(win.Frame, {Position = UDim2.new(0, currentX, 0, currentY)}, 0.3)
+        
+        currentX = currentX + winWidth + padding
+        maxRowHeight = math.max(maxRowHeight, winHeight)
+        
+        State.WindowPositions[data.id] = {
+            X = currentX - winWidth - padding,
+            Y = currentY,
+            Width = winWidth,
+            Height = winHeight
+        }
+    end
+    
+    SaveSettings()
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- TOP BAR
+-- ═══════════════════════════════════════════════════════════════
+
+local TopBar = Instance.new("Frame")
+TopBar.Name = "TopBar"
+TopBar.Parent = ScreenGui
+TopBar.BackgroundColor3 = Colors.Background
+TopBar.BorderSizePixel = 0
+TopBar.Position = UDim2.new(0.5, 0, 0, Scale(8))
+TopBar.Size = UDim2.new(0, Scale(700), 0, Scale(44))
+TopBar.AnchorPoint = Vector2.new(0.5, 0)
+
+Instance.new("UICorner", TopBar).CornerRadius = UDim.new(0, Scale(8))
+Instance.new("UIStroke", TopBar).Color = Colors.Border
+
+-- OT Logo
+local LogoFrame = Instance.new("Frame")
+LogoFrame.Name = "Logo"
+LogoFrame.Parent = TopBar
+LogoFrame.BackgroundTransparency = 1
+LogoFrame.Position = UDim2.new(0, Scale(10), 0.5, 0)
+LogoFrame.Size = UDim2.new(0, Scale(48), 0, Scale(32))
+LogoFrame.AnchorPoint = Vector2.new(0, 0.5)
+
+local LogoO = Instance.new("Frame")
+LogoO.Parent = LogoFrame
+LogoO.BackgroundColor3 = Colors.Text
+LogoO.Position = UDim2.new(0, 0, 0.5, 0)
+LogoO.Size = UDim2.new(0, Scale(26), 0, Scale(26))
+LogoO.AnchorPoint = Vector2.new(0, 0.5)
+Instance.new("UICorner", LogoO).CornerRadius = UDim.new(1, 0)
+
+local LogoOInner = Instance.new("Frame")
+LogoOInner.Parent = LogoO
+LogoOInner.BackgroundColor3 = Colors.Background
+LogoOInner.Position = UDim2.new(0.5, 0, 0.5, 0)
+LogoOInner.Size = UDim2.new(0, Scale(14), 0, Scale(14))
+LogoOInner.AnchorPoint = Vector2.new(0.5, 0.5)
+Instance.new("UICorner", LogoOInner).CornerRadius = UDim.new(1, 0)
+
+local LogoTVert = Instance.new("Frame")
+LogoTVert.Parent = LogoFrame
+LogoTVert.BackgroundColor3 = Colors.Text
+LogoTVert.Position = UDim2.new(0, Scale(34), 0.5, 0)
+LogoTVert.Size = UDim2.new(0, Scale(6), 0, Scale(20))
+LogoTVert.AnchorPoint = Vector2.new(0, 0.5)
+Instance.new("UICorner", LogoTVert).CornerRadius = UDim.new(0, 2)
+
+local LogoTHoriz = Instance.new("Frame")
+LogoTHoriz.Parent = LogoFrame
+LogoTHoriz.BackgroundColor3 = Colors.Text
+LogoTHoriz.Position = UDim2.new(0, Scale(28), 0, Scale(3))
+LogoTHoriz.Size = UDim2.new(0, Scale(18), 0, Scale(6))
+Instance.new("UICorner", LogoTHoriz).CornerRadius = UDim.new(0, 2)
+
+local Divider1 = Instance.new("Frame")
+Divider1.Parent = TopBar
+Divider1.BackgroundColor3 = Colors.Border
+Divider1.Position = UDim2.new(0, Scale(68), 0.5, 0)
+Divider1.Size = UDim2.new(0, 1, 0, Scale(28))
+Divider1.AnchorPoint = Vector2.new(0, 0.5)
+
+local TabContainer = Instance.new("Frame")
+TabContainer.Name = "Tabs"
+TabContainer.Parent = TopBar
+TabContainer.BackgroundTransparency = 1
+TabContainer.Position = UDim2.new(0, Scale(78), 0, 0)
+TabContainer.Size = UDim2.new(0, Scale(420), 1, 0)
+TabContainer.ZIndex = 2
+
+local TabLayout = Instance.new("UIListLayout")
+TabLayout.FillDirection = Enum.FillDirection.Horizontal
+TabLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
+TabLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+TabLayout.Padding = UDim.new(0, Scale(5))
+TabLayout.Parent = TabContainer
+
+local RightContainer = Instance.new("Frame")
+RightContainer.Name = "Right"
+RightContainer.Parent = TopBar
+RightContainer.BackgroundTransparency = 1
+RightContainer.Position = UDim2.new(1, Scale(-200), 0.5, 0)
+RightContainer.Size = UDim2.new(0, Scale(195), 0, Scale(32))
+RightContainer.AnchorPoint = Vector2.new(0, 0.5)
+
+local RightLayout = Instance.new("UIListLayout")
+RightLayout.FillDirection = Enum.FillDirection.Horizontal
+RightLayout.HorizontalAlignment = Enum.HorizontalAlignment.Right
+RightLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+RightLayout.Padding = UDim.new(0, Scale(6))
+RightLayout.Parent = RightContainer
+
+local LegitBtn = Instance.new("TextButton")
+LegitBtn.Name = "LegitCalc"
+LegitBtn.Parent = RightContainer
+LegitBtn.BackgroundColor3 = Colors.UltraLegit
+LegitBtn.Size = UDim2.new(0, Scale(52), 0, Scale(28))
+LegitBtn.Text = "100%"
+LegitBtn.TextColor3 = Colors.Background
+LegitBtn.TextSize = Scale(11)
+LegitBtn.Font = Enum.Font.GothamBold
+LegitBtn.AutoButtonColor = false
+LegitBtn.LayoutOrder = 1
+Instance.new("UICorner", LegitBtn).CornerRadius = UDim.new(0, Scale(5))
+
+local OrganizeBtn = Instance.new("TextButton")
+OrganizeBtn.Name = "Organize"
+OrganizeBtn.Parent = RightContainer
+OrganizeBtn.BackgroundColor3 = Colors.Surface
+OrganizeBtn.Size = UDim2.new(0, Scale(28), 0, Scale(28))
+OrganizeBtn.Text = "⊞"
+OrganizeBtn.TextColor3 = Colors.Text
+OrganizeBtn.TextSize = Scale(16)
+OrganizeBtn.Font = Enum.Font.GothamBold
+OrganizeBtn.AutoButtonColor = false
+OrganizeBtn.LayoutOrder = 2
+OrganizeBtn.ZIndex = 5
+Instance.new("UICorner", OrganizeBtn).CornerRadius = UDim.new(0, Scale(5))
+
+OrganizeBtn.MouseEnter:Connect(function() Tween(OrganizeBtn, {BackgroundColor3 = Colors.SurfaceLight}, 0.1) end)
+OrganizeBtn.MouseLeave:Connect(function() Tween(OrganizeBtn, {BackgroundColor3 = Colors.Surface}, 0.1) end)
+OrganizeBtn.MouseButton1Click:Connect(function() OrganizeWindows() end)
+
+local SearchBtn = Instance.new("TextButton")
+SearchBtn.Name = "Search"
+SearchBtn.Parent = RightContainer
+SearchBtn.BackgroundColor3 = Colors.Surface
+SearchBtn.Size = UDim2.new(0, Scale(28), 0, Scale(28))
+SearchBtn.Text = "🔍"
+SearchBtn.TextColor3 = Colors.Text
+SearchBtn.TextSize = Scale(14)
+SearchBtn.Font = Enum.Font.GothamBold
+SearchBtn.AutoButtonColor = false
+SearchBtn.LayoutOrder = 3
+SearchBtn.ZIndex = 5
+Instance.new("UICorner", SearchBtn).CornerRadius = UDim.new(0, Scale(5))
+
+SearchBtn.MouseEnter:Connect(function() Tween(SearchBtn, {BackgroundColor3 = Colors.SurfaceLight}, 0.1) end)
+SearchBtn.MouseLeave:Connect(function() Tween(SearchBtn, {BackgroundColor3 = Colors.Surface}, 0.1) end)
+
+local SettingsBtn = Instance.new("TextButton")
+SettingsBtn.Name = "Settings"
+SettingsBtn.Parent = RightContainer
+SettingsBtn.BackgroundColor3 = Colors.Surface
+SettingsBtn.Size = UDim2.new(0, Scale(38), 0, Scale(28))
+SettingsBtn.Text = "⚙"
+SettingsBtn.TextColor3 = Colors.Text
+SettingsBtn.TextSize = Scale(18)
+SettingsBtn.Font = Enum.Font.GothamBold
+SettingsBtn.AutoButtonColor = false
+SettingsBtn.LayoutOrder = 4
+SettingsBtn.ZIndex = 5
+Instance.new("UICorner", SettingsBtn).CornerRadius = UDim.new(0, Scale(5))
+
+SettingsBtn.MouseEnter:Connect(function() Tween(SettingsBtn, {BackgroundColor3 = Colors.SurfaceLight}, 0.1) end)
+SettingsBtn.MouseLeave:Connect(function() Tween(SettingsBtn, {BackgroundColor3 = Colors.Surface}, 0.1) end)
+
+local draggingTopBar = false
+local dragStartTopBar, startPosTopBar
+
+local TopBarDragArea = Instance.new("Frame")
+TopBarDragArea.Name = "DragArea"
+TopBarDragArea.Parent = TopBar
+TopBarDragArea.BackgroundTransparency = 1
+TopBarDragArea.Position = UDim2.new(0, 0, 0, 0)
+TopBarDragArea.Size = UDim2.new(0, Scale(500), 1, 0)
+TopBarDragArea.ZIndex = 1
+
+TopBarDragArea.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        draggingTopBar = true
+        dragStartTopBar = input.Position
+        startPosTopBar = TopBar.Position
+    end
+end)
+TopBarDragArea.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        draggingTopBar = false
+    end
+end)
+UserInputService.InputChanged:Connect(function(input)
+    if draggingTopBar and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        local scale = GetCurrentScale()
+        local delta = input.Position - dragStartTopBar
+        TopBar.Position = UDim2.new(startPosTopBar.X.Scale, startPosTopBar.X.Offset + delta.X / scale, startPosTopBar.Y.Scale, startPosTopBar.Y.Offset + delta.Y / scale)
+    end
+end)
+
+-- ═══════════════════════════════════════════════════════════════
+-- LEGIT CALCULATOR POPUP
+-- ═══════════════════════════════════════════════════════════════
+
+local LegitPopup = Instance.new("Frame")
+LegitPopup.Name = "LegitPopup"
+LegitPopup.Parent = ScreenGui
+LegitPopup.BackgroundColor3 = Colors.Background
+LegitPopup.Position = UDim2.new(0.5, 0, 0.5, 0)
+LegitPopup.Size = UDim2.new(0, Scale(200), 0, Scale(240))
+LegitPopup.AnchorPoint = Vector2.new(0.5, 0.5)
+LegitPopup.Visible = false
+Instance.new("UICorner", LegitPopup).CornerRadius = UDim.new(0, Scale(12))
+Instance.new("UIStroke", LegitPopup).Color = Colors.Border
+
+local LegitTitleBar = Instance.new("Frame")
+LegitTitleBar.Parent = LegitPopup
+LegitTitleBar.BackgroundColor3 = Colors.Surface
+LegitTitleBar.Size = UDim2.new(1, 0, 0, Scale(32))
+Instance.new("UICorner", LegitTitleBar).CornerRadius = UDim.new(0, Scale(12))
+
+local LegitTitleFix = Instance.new("Frame")
+LegitTitleFix.Parent = LegitTitleBar
+LegitTitleFix.BackgroundColor3 = Colors.Surface
+LegitTitleFix.Position = UDim2.new(0, 0, 0.5, 0)
+LegitTitleFix.Size = UDim2.new(1, 0, 0.5, 0)
+
+local LegitTitle = Instance.new("TextLabel")
+LegitTitle.Parent = LegitTitleBar
+LegitTitle.BackgroundTransparency = 1
+LegitTitle.Size = UDim2.new(1, 0, 1, 0)
+LegitTitle.Font = Enum.Font.GothamBold
+LegitTitle.Text = "LEGIT CALCULATOR"
+LegitTitle.TextColor3 = Colors.Text
+LegitTitle.TextSize = Scale(11)
+
+local draggingLegit = false
+local dragStartLegit, startPosLegit
+
+LegitTitleBar.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        draggingLegit = true
+        dragStartLegit = input.Position
+        startPosLegit = LegitPopup.Position
+    end
+end)
+LegitTitleBar.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then draggingLegit = false end
+end)
+UserInputService.InputChanged:Connect(function(input)
+    if draggingLegit and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        local scale = GetCurrentScale()
+        local delta = input.Position - dragStartLegit
+        LegitPopup.Position = UDim2.new(startPosLegit.X.Scale, startPosLegit.X.Offset + delta.X / scale, startPosLegit.Y.Scale, startPosLegit.Y.Offset + delta.Y / scale)
+    end
+end)
+
+local RingOuter = Instance.new("Frame")
+RingOuter.Parent = LegitPopup
+RingOuter.BackgroundColor3 = Colors.UltraLegit
+RingOuter.Position = UDim2.new(0.5, 0, 0, Scale(50))
+RingOuter.Size = UDim2.new(0, Scale(120), 0, Scale(120))
+RingOuter.AnchorPoint = Vector2.new(0.5, 0)
+Instance.new("UICorner", RingOuter).CornerRadius = UDim.new(1, 0)
+
+local RingInner = Instance.new("Frame")
+RingInner.Parent = RingOuter
+RingInner.BackgroundColor3 = Colors.Background
+RingInner.Position = UDim2.new(0.5, 0, 0.5, 0)
+RingInner.Size = UDim2.new(0, Scale(80), 0, Scale(80))
+RingInner.AnchorPoint = Vector2.new(0.5, 0.5)
+Instance.new("UICorner", RingInner).CornerRadius = UDim.new(1, 0)
+
+local PercentLabel = Instance.new("TextLabel")
+PercentLabel.Parent = RingInner
+PercentLabel.BackgroundTransparency = 1
+PercentLabel.Size = UDim2.new(1, 0, 1, 0)
+PercentLabel.Font = Enum.Font.GothamBlack
+PercentLabel.Text = "100%"
+PercentLabel.TextColor3 = Colors.Text
+PercentLabel.TextSize = Scale(24)
+
+local StatusLabel = Instance.new("TextLabel")
+StatusLabel.Parent = LegitPopup
+StatusLabel.BackgroundTransparency = 1
+StatusLabel.Position = UDim2.new(0.5, 0, 0, Scale(178))
+StatusLabel.Size = UDim2.new(1, 0, 0, Scale(24))
+StatusLabel.AnchorPoint = Vector2.new(0.5, 0)
+StatusLabel.Font = Enum.Font.GothamBold
+StatusLabel.Text = "Ultra Legit"
+StatusLabel.TextColor3 = Colors.UltraLegit
+StatusLabel.TextSize = Scale(15)
+
+local ClosePopupBtn = Instance.new("TextButton")
+ClosePopupBtn.Parent = LegitPopup
+ClosePopupBtn.BackgroundColor3 = Colors.Surface
+ClosePopupBtn.Position = UDim2.new(0.5, 0, 1, Scale(-38))
+ClosePopupBtn.Size = UDim2.new(0, Scale(80), 0, Scale(28))
+ClosePopupBtn.AnchorPoint = Vector2.new(0.5, 0)
+ClosePopupBtn.Font = Enum.Font.GothamSemibold
+ClosePopupBtn.Text = "Close"
+ClosePopupBtn.TextColor3 = Colors.Text
+ClosePopupBtn.TextSize = Scale(11)
+ClosePopupBtn.AutoButtonColor = false
+Instance.new("UICorner", ClosePopupBtn).CornerRadius = UDim.new(0, Scale(5))
+
+ClosePopupBtn.MouseButton1Click:Connect(function() LegitPopup.Visible = false end)
+LegitBtn.MouseButton1Click:Connect(function() LegitPopup.Visible = not LegitPopup.Visible end)
+
+-- ═══════════════════════════════════════════════════════════════
+-- SEARCH POPUP
+-- ═══════════════════════════════════════════════════════════════
+
+local SearchPopup = Instance.new("Frame")
+SearchPopup.Name = "SearchPopup"
+SearchPopup.Parent = ScreenGui
+SearchPopup.BackgroundColor3 = Colors.Background
+SearchPopup.Position = UDim2.new(0.5, 0, 0.5, 0)
+SearchPopup.Size = UDim2.new(0, Scale(350), 0, Scale(450))
+SearchPopup.AnchorPoint = Vector2.new(0.5, 0.5)
+SearchPopup.Visible = false
+SearchPopup.ZIndex = 100
+Instance.new("UICorner", SearchPopup).CornerRadius = UDim.new(0, Scale(12))
+Instance.new("UIStroke", SearchPopup).Color = Colors.Border
+
+local SearchTitleBar = Instance.new("Frame")
+SearchTitleBar.Parent = SearchPopup
+SearchTitleBar.BackgroundColor3 = Colors.Surface
+SearchTitleBar.Size = UDim2.new(1, 0, 0, Scale(32))
+SearchTitleBar.ZIndex = 100
+Instance.new("UICorner", SearchTitleBar).CornerRadius = UDim.new(0, Scale(12))
+
+local SearchTitleFix = Instance.new("Frame")
+SearchTitleFix.Parent = SearchTitleBar
+SearchTitleFix.BackgroundColor3 = Colors.Surface
+SearchTitleFix.Position = UDim2.new(0, 0, 0.5, 0)
+SearchTitleFix.Size = UDim2.new(1, 0, 0.5, 0)
+SearchTitleFix.ZIndex = 100
+
+local SearchTitle = Instance.new("TextLabel")
+SearchTitle.Parent = SearchTitleBar
+SearchTitle.BackgroundTransparency = 1
+SearchTitle.Size = UDim2.new(1, 0, 1, 0)
+SearchTitle.Font = Enum.Font.GothamBold
+SearchTitle.Text = "🔍 SEARCH FEATURES"
+SearchTitle.TextColor3 = Colors.Text
+SearchTitle.TextSize = Scale(11)
+SearchTitle.ZIndex = 100
+
+local draggingSearch = false
+local dragStartSearch, startPosSearch
+
+SearchTitleBar.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        draggingSearch = true
+        dragStartSearch = input.Position
+        startPosSearch = SearchPopup.Position
+    end
+end)
+SearchTitleBar.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then draggingSearch = false end
+end)
+UserInputService.InputChanged:Connect(function(input)
+    if draggingSearch and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        local scale = GetCurrentScale()
+        local delta = input.Position - dragStartSearch
+        SearchPopup.Position = UDim2.new(startPosSearch.X.Scale, startPosSearch.X.Offset + delta.X / scale, startPosSearch.Y.Scale, startPosSearch.Y.Offset + delta.Y / scale)
+    end
+end)
+
+local SearchInputBox = Instance.new("TextBox")
+SearchInputBox.Parent = SearchPopup
+SearchInputBox.BackgroundColor3 = Colors.SurfaceLighter
+SearchInputBox.Position = UDim2.new(0, Scale(10), 0, Scale(40))
+SearchInputBox.Size = UDim2.new(1, Scale(-20), 0, Scale(32))
+SearchInputBox.Font = Enum.Font.Gotham
+SearchInputBox.Text = ""
+SearchInputBox.PlaceholderText = "Search for features..."
+SearchInputBox.PlaceholderColor3 = Colors.TextDim
+SearchInputBox.TextColor3 = Colors.Text
+SearchInputBox.TextSize = Scale(11)
+SearchInputBox.ClearTextOnFocus = false
+SearchInputBox.ZIndex = 100
+Instance.new("UICorner", SearchInputBox).CornerRadius = UDim.new(0, Scale(6))
+
+local SearchResultsFrame = Instance.new("ScrollingFrame")
+SearchResultsFrame.Name = "Results"
+SearchResultsFrame.Parent = SearchPopup
+SearchResultsFrame.BackgroundTransparency = 1
+SearchResultsFrame.Position = UDim2.new(0, Scale(10), 0, Scale(80))
+SearchResultsFrame.Size = UDim2.new(1, Scale(-20), 1, Scale(-130))
+SearchResultsFrame.ClipsDescendants = true
+SearchResultsFrame.ScrollBarThickness = Scale(4)
+SearchResultsFrame.ScrollBarImageColor3 = Colors.TextDim
+SearchResultsFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+SearchResultsFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
+SearchResultsFrame.BorderSizePixel = 0
+SearchResultsFrame.ZIndex = 100
+
+local SearchResultsLayout = Instance.new("UIListLayout")
+SearchResultsLayout.Padding = UDim.new(0, Scale(4))
+SearchResultsLayout.SortOrder = Enum.SortOrder.LayoutOrder
+SearchResultsLayout.Parent = SearchResultsFrame
+
+local CloseSearchBtn = Instance.new("TextButton")
+CloseSearchBtn.Parent = SearchPopup
+CloseSearchBtn.BackgroundColor3 = Colors.Surface
+CloseSearchBtn.Position = UDim2.new(0.5, 0, 1, Scale(-38))
+CloseSearchBtn.Size = UDim2.new(0, Scale(80), 0, Scale(28))
+CloseSearchBtn.AnchorPoint = Vector2.new(0.5, 0)
+CloseSearchBtn.Font = Enum.Font.GothamSemibold
+CloseSearchBtn.Text = "Close"
+CloseSearchBtn.TextColor3 = Colors.Text
+CloseSearchBtn.TextSize = Scale(11)
+CloseSearchBtn.AutoButtonColor = false
+CloseSearchBtn.ZIndex = 100
+Instance.new("UICorner", CloseSearchBtn).CornerRadius = UDim.new(0, Scale(5))
+
+CloseSearchBtn.MouseButton1Click:Connect(function() SearchPopup.Visible = false end)
+
+local RefreshSearchResults
+
+local function CreateSearchResults(query)
+    for _, child in pairs(SearchResultsFrame:GetChildren()) do
+        if not child:IsA("UIListLayout") then child:Destroy() end
+    end
+    
+    query = (query or ""):lower()
+    local order = 0
+    local elementCount = 0
+    
+    for _ in pairs(AllElements) do elementCount = elementCount + 1 end
+    
+    for id, elem in pairs(AllElements) do
+        local elemText = elem.Text
+        if elemText and (query == "" or elemText:lower():find(query, 1, true)) then
+            order = order + 1
+            
+            local ResultItem = Instance.new("Frame")
+            ResultItem.Name = "Result_" .. tostring(id)
+            ResultItem.Parent = SearchResultsFrame
+            ResultItem.BackgroundColor3 = Colors.Surface
+            ResultItem.Size = UDim2.new(1, 0, 0, Scale(36))
+            ResultItem.LayoutOrder = order
+            Instance.new("UICorner", ResultItem).CornerRadius = UDim.new(0, Scale(5))
+            
+            local ResultLabel = Instance.new("TextLabel")
+            ResultLabel.Parent = ResultItem
+            ResultLabel.BackgroundTransparency = 1
+            ResultLabel.Position = UDim2.new(0, Scale(10), 0, 0)
+            ResultLabel.Size = UDim2.new(0.6, 0, 1, 0)
+            ResultLabel.Font = Enum.Font.Gotham
+            ResultLabel.Text = elemText
+            ResultLabel.TextColor3 = Colors.Text
+            ResultLabel.TextSize = Scale(10)
+            ResultLabel.TextXAlignment = Enum.TextXAlignment.Left
+            
+            local TypeLabel = Instance.new("TextLabel")
+            TypeLabel.Parent = ResultItem
+            TypeLabel.BackgroundTransparency = 1
+            TypeLabel.Position = UDim2.new(0.6, 0, 0, 0)
+            TypeLabel.Size = UDim2.new(0.2, 0, 1, 0)
+            TypeLabel.Font = Enum.Font.Gotham
+            TypeLabel.Text = elem.Type or "?"
+            TypeLabel.TextColor3 = Colors.TextDim
+            TypeLabel.TextSize = Scale(9)
+            
+            if elem.Type == "Toggle" and elem.SetValue then
+                local currentId = id
+                local toggled = State.ConfigData[currentId] or false
+                
+                local ToggleBtn = Instance.new("Frame")
+                ToggleBtn.Name = "ToggleBtn"
+                ToggleBtn.Parent = ResultItem
+                ToggleBtn.BackgroundColor3 = toggled and Colors.Accent or Colors.SurfaceLighter
+                ToggleBtn.Position = UDim2.new(1, Scale(-40), 0.5, 0)
+                ToggleBtn.Size = UDim2.new(0, Scale(32), 0, Scale(16))
+                ToggleBtn.AnchorPoint = Vector2.new(0, 0.5)
+                Instance.new("UICorner", ToggleBtn).CornerRadius = UDim.new(1, 0)
+                
+                local ToggleCircle = Instance.new("Frame")
+                ToggleCircle.Name = "Circle"
+                ToggleCircle.Parent = ToggleBtn
+                ToggleCircle.BackgroundColor3 = toggled and Colors.Background or Colors.Text
+                ToggleCircle.Position = toggled and UDim2.new(1, Scale(-14), 0.5, 0) or UDim2.new(0, Scale(2), 0.5, 0)
+                ToggleCircle.Size = UDim2.new(0, Scale(12), 0, Scale(12))
+                ToggleCircle.AnchorPoint = Vector2.new(0, 0.5)
+                Instance.new("UICorner", ToggleCircle).CornerRadius = UDim.new(1, 0)
+                
+                local ClickArea = Instance.new("TextButton")
+                ClickArea.Parent = ResultItem
+                ClickArea.BackgroundTransparency = 1
+                ClickArea.Position = UDim2.new(0, 0, 0, 0)
+                ClickArea.Size = UDim2.new(1, 0, 1, 0)
+                ClickArea.Text = ""
+                
+                ClickArea.MouseButton1Click:Connect(function()
+                    toggled = not toggled
+                    elem.SetValue(toggled)
+                    State.ConfigData[currentId] = toggled
+                    Tween(ToggleBtn, {BackgroundColor3 = toggled and Colors.Accent or Colors.SurfaceLighter}, 0.2)
+                    Tween(ToggleCircle, {
+                        Position = toggled and UDim2.new(1, Scale(-14), 0.5, 0) or UDim2.new(0, Scale(2), 0.5, 0),
+                        BackgroundColor3 = toggled and Colors.Background or Colors.Text
+                    }, 0.2)
+                    SaveSettings()
+                end)
+            end
+        end
+    end
+    
+    if order == 0 then
+        local NoResults = Instance.new("TextLabel")
+        NoResults.Parent = SearchResultsFrame
+        NoResults.BackgroundTransparency = 1
+        NoResults.Size = UDim2.new(1, 0, 0, Scale(40))
+        NoResults.Font = Enum.Font.Gotham
+        NoResults.Text = elementCount > 0 and "No matching features" or "Loading features..."
+        NoResults.TextColor3 = Colors.TextDim
+        NoResults.TextSize = Scale(10)
+    end
+end
+
+RefreshSearchResults = CreateSearchResults
+
+SearchInputBox:GetPropertyChangedSignal("Text"):Connect(function()
+    RefreshSearchResults(SearchInputBox.Text)
+end)
+
+SearchBtn.MouseButton1Click:Connect(function()
+    SearchPopup.Visible = not SearchPopup.Visible
+    if SearchPopup.Visible then
+        RefreshSearchResults("")
+        SearchInputBox:CaptureFocus()
+    end
+end)
+
+local function UpdateLegitDisplay()
+    local blatant = math.clamp(State.TotalLegitScore, 0, 100)
+    local legit = math.floor(100 - blatant)
+    PercentLabel.Text = legit .. "%"
+    LegitBtn.Text = legit .. "%"
+    
+    local color, status
+    if blatant < 10 then color, status = Colors.UltraLegit, "Ultra Legit"
+    elseif blatant < 30 then color, status = Colors.Legit, "Legit"
+    elseif blatant < 50 then color, status = Colors.SemiLegit, "Semi Legit"
+    elseif blatant < 70 then color, status = Colors.SemiBlatant, "Semi Blatant"
+    elseif blatant < 90 then color, status = Colors.Blatant, "Blatant"
+    else color, status = Colors.Rage, "Rage" end
+    
+    Tween(RingOuter, {BackgroundColor3 = color}, 0.3)
+    Tween(LegitBtn, {BackgroundColor3 = color}, 0.3)
+    StatusLabel.Text = status
+    StatusLabel.TextColor3 = color
+end
+
+task.spawn(function() while task.wait(0.3) do UpdateLegitDisplay() end end)
+
+-- ═══════════════════════════════════════════════════════════════
+-- WINDOWS WITH DYNAMIC LAYOUT
+-- ═══════════════════════════════════════════════════════════════
+
+local function CreateWindow(config)
+    local windowId = config.Id
+    local baseWidth = config.Width or 360
+    local baseHeight = config.Height or 240
+    local width = Scale(baseWidth)
+    local height = Scale(baseHeight)
+    
+    local posX, posY
+    local saved = State.WindowPositions[windowId]
+    if saved then
+        posX, posY = saved.X or 0, saved.Y or 0
+        width = saved.Width or width
+        height = saved.Height or height
+    else
+        posX, posY = GetNextWindowPosition(width, height)
+    end
+    
+    local defaultVisible = config.Visible ~= false
+    if State.WindowVisibility[windowId] ~= nil then
+        defaultVisible = State.WindowVisibility[windowId]
+    end
+    
+    local window = {Id = windowId, Elements = {}, Visible = defaultVisible, BaseWidth = baseWidth, BaseHeight = baseHeight}
+    
+    local Frame = Instance.new("Frame")
+    Frame.Name = windowId
+    Frame.Parent = ScreenGui
+    Frame.BackgroundColor3 = Colors.Background
+    Frame.BorderSizePixel = 0
+    Frame.Position = UDim2.new(0, posX, 0, posY)
+    Frame.Size = UDim2.new(0, width, 0, height)
+    Frame.Visible = defaultVisible
+    Frame.ClipsDescendants = true
+    Instance.new("UICorner", Frame).CornerRadius = UDim.new(0, Scale(8))
+    Instance.new("UIStroke", Frame).Color = Colors.Border
+    
+    local TitleBar = Instance.new("Frame")
+    TitleBar.Name = "TitleBar"
+    TitleBar.Parent = Frame
+    TitleBar.BackgroundColor3 = Colors.Surface
+    TitleBar.Size = UDim2.new(1, 0, 0, Scale(30))
+    Instance.new("UICorner", TitleBar).CornerRadius = UDim.new(0, Scale(8))
+    
+    local TitleBarFix = Instance.new("Frame")
+    TitleBarFix.Parent = TitleBar
+    TitleBarFix.BackgroundColor3 = Colors.Surface
+    TitleBarFix.Position = UDim2.new(0, 0, 0.5, 0)
+    TitleBarFix.Size = UDim2.new(1, 0, 0.5, 0)
+    
+    local Title = Instance.new("TextLabel")
+    Title.Parent = TitleBar
+    Title.BackgroundTransparency = 1
+    Title.Position = UDim2.new(0, Scale(10), 0, 0)
+    Title.Size = UDim2.new(1, Scale(-50), 1, 0)
+    Title.Font = Enum.Font.GothamBold
+    Title.Text = config.Title or "Window"
+    Title.TextColor3 = Colors.Text
+    Title.TextSize = Scale(12)
+    Title.TextXAlignment = Enum.TextXAlignment.Left
+    
+    local SortBtn = Instance.new("TextButton")
+    SortBtn.Name = "SortBtn"
+    SortBtn.Parent = TitleBar
+    SortBtn.BackgroundColor3 = Colors.SurfaceLight
+    SortBtn.Position = UDim2.new(1, Scale(-70), 0, Scale(5))
+    SortBtn.Size = UDim2.new(0, Scale(40), 0, Scale(20))
+    SortBtn.Text = "Sort"
+    SortBtn.TextColor3 = Colors.Text
+    SortBtn.TextSize = Scale(8)
+    SortBtn.Font = Enum.Font.GothamSemibold
+    SortBtn.AutoButtonColor = false
+    Instance.new("UICorner", SortBtn).CornerRadius = UDim.new(0, Scale(4))
+    
+    local SortDropdown = Instance.new("Frame")
+    SortDropdown.Name = "SortDropdown"
+    SortDropdown.Parent = Frame
+    SortDropdown.BackgroundColor3 = Colors.Surface
+    SortDropdown.Position = UDim2.new(1, Scale(-110), 0, Scale(28))
+    SortDropdown.Size = UDim2.new(0, Scale(100), 0, Scale(110))
+    SortDropdown.Visible = false
+    SortDropdown.ZIndex = 50
+    Instance.new("UICorner", SortDropdown).CornerRadius = UDim.new(0, Scale(5))
+    Instance.new("UIStroke", SortDropdown).Color = Colors.Border
+    
+    local SortOptions = {"Most Used", "Alphabetical", "Legit", "Blatant"}
+    local currentSort = State.WindowSortModes[windowId] or "Most Used"
+    
+    for i, sortOption in ipairs(SortOptions) do
+        local SortOptionBtn = Instance.new("TextButton")
+        SortOptionBtn.Parent = SortDropdown
+        SortOptionBtn.BackgroundColor3 = (currentSort == sortOption) and Colors.Accent or Colors.SurfaceLighter
+        SortOptionBtn.Position = UDim2.new(0, Scale(4), 0, Scale(4) + (i-1) * Scale(26))
+        SortOptionBtn.Size = UDim2.new(1, Scale(-8), 0, Scale(24))
+        SortOptionBtn.Text = sortOption
+        SortOptionBtn.TextColor3 = (currentSort == sortOption) and Colors.Background or Colors.Text
+        SortOptionBtn.TextSize = Scale(9)
+        SortOptionBtn.Font = Enum.Font.Gotham
+        SortOptionBtn.AutoButtonColor = false
+        SortOptionBtn.ZIndex = 51
+        Instance.new("UICorner", SortOptionBtn).CornerRadius = UDim.new(0, Scale(4))
+        
+        SortOptionBtn.MouseEnter:Connect(function()
+            if currentSort ~= sortOption then
+                Tween(SortOptionBtn, {BackgroundColor3 = Colors.SurfaceLighter}, 0.1)
+            end
+        end)
+        SortOptionBtn.MouseLeave:Connect(function()
+            if currentSort ~= sortOption then
+                Tween(SortOptionBtn, {BackgroundColor3 = Colors.SurfaceLighter}, 0.1)
+            end
+        end)
+        
+        SortOptionBtn.MouseButton1Click:Connect(function()
+            currentSort = sortOption
+            State.WindowSortModes[windowId] = sortOption
+            SortDropdown.Visible = false
+            SaveSettings()
+            
+            for _, btn in pairs(SortDropdown:GetChildren()) do
+                if btn:IsA("TextButton") then
+                    local isSelected = btn.Text == sortOption
+                    btn.BackgroundColor3 = isSelected and Colors.Accent or Colors.SurfaceLighter
+                    btn.TextColor3 = isSelected and Colors.Background or Colors.Text
+                end
+            end
+            
+            window.SortContent(sortOption)
+        end)
+    end
+    
+    SortBtn.MouseEnter:Connect(function() Tween(SortBtn, {BackgroundColor3 = Colors.SurfaceLighter}, 0.1) end)
+    SortBtn.MouseLeave:Connect(function() Tween(SortBtn, {BackgroundColor3 = Colors.SurfaceLight}, 0.1) end)
+    SortBtn.MouseButton1Click:Connect(function()
+        SortDropdown.Visible = not SortDropdown.Visible
+    end)
+    
+    local CloseBtn = Instance.new("TextButton")
+    CloseBtn.Parent = TitleBar
+    CloseBtn.BackgroundColor3 = Colors.SurfaceLight
+    CloseBtn.Position = UDim2.new(1, Scale(-26), 0, Scale(5))
+    CloseBtn.Size = UDim2.new(0, Scale(20), 0, Scale(20))
+    CloseBtn.Text = "×"
+    CloseBtn.TextColor3 = Colors.Text
+    CloseBtn.TextSize = Scale(16)
+    CloseBtn.Font = Enum.Font.GothamBold
+    CloseBtn.AutoButtonColor = false
+    Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(0, Scale(4))
+    
+    local Content = Instance.new("ScrollingFrame")
+    Content.Name = "Content"
+    Content.Parent = Frame
+    Content.BackgroundTransparency = 1
+    Content.Position = UDim2.new(0, Scale(6), 0, Scale(34))
+    Content.Size = UDim2.new(1, Scale(-12), 1, Scale(-42))
+    Content.ClipsDescendants = true
+    Content.ScrollBarThickness = Scale(4)
+    Content.ScrollBarImageColor3 = Colors.TextDim
+    Content.CanvasSize = UDim2.new(0, 0, 0, 0)
+    Content.AutomaticCanvasSize = Enum.AutomaticSize.Y
+    Content.BorderSizePixel = 0
+    
+    local ContentLayout = Instance.new("UIListLayout")
+    ContentLayout.FillDirection = Enum.FillDirection.Horizontal
+    ContentLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
+    ContentLayout.VerticalAlignment = Enum.VerticalAlignment.Top
+    ContentLayout.Wraps = true
+    ContentLayout.Padding = UDim.new(0, Scale(4))
+    ContentLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    ContentLayout.Parent = Content
+    
+    local ResizeHandle = Instance.new("TextButton")
+    ResizeHandle.Parent = Frame
+    ResizeHandle.BackgroundColor3 = Colors.TextDim
+    ResizeHandle.BackgroundTransparency = 0.5
+    ResizeHandle.Position = UDim2.new(1, Scale(-10), 1, Scale(-10))
+    ResizeHandle.Size = UDim2.new(0, Scale(8), 0, Scale(8))
+    ResizeHandle.Text = ""
+    ResizeHandle.AutoButtonColor = false
+    Instance.new("UICorner", ResizeHandle).CornerRadius = UDim.new(0, 2)
+    
+    window.Frame = Frame
+    window.Content = Content
+    window.ContentLayout = ContentLayout
+    
+    local function SortContent(mode)
+        local children = {}
+        for _, child in pairs(Content:GetChildren()) do
+            if child:IsA("Frame") or child:IsA("TextButton") or child:IsA("TextLabel") then
+                local toggleId = child:GetAttribute("ToggleId")
+                local legitScore = child:GetAttribute("LegitScore") or 0
+                local elemText = ""
+                
+                local label = child:FindFirstChild("TextLabel") or child:FindFirstChildWhichIsA("TextLabel")
+                if label then elemText = label.Text or "" end
+                if child:IsA("TextLabel") then elemText = child.Text or "" end
+                
+                local usageScore = 0
+                if toggleId and State.UsageStats[toggleId] then
+                    local stats = State.UsageStats[toggleId]
+                    usageScore = (stats.totalTime or 0) + (stats.enableCount or 0) * 60
+                end
+                
+                table.insert(children, {
+                    instance = child,
+                    text = elemText,
+                    legitScore = legitScore,
+                    usageScore = usageScore,
+                    originalOrder = child.LayoutOrder
+                })
+            end
+        end
+        
+        if mode == "Most Used" then
+            table.sort(children, function(a, b) return a.usageScore > b.usageScore end)
+        elseif mode == "Alphabetical" then
+            table.sort(children, function(a, b) return a.text:lower() < b.text:lower() end)
+        elseif mode == "Legit" then
+            table.sort(children, function(a, b) return a.legitScore < b.legitScore end)
+        elseif mode == "Blatant" then
+            table.sort(children, function(a, b) return a.legitScore > b.legitScore end)
+        end
+        
+        for i, data in ipairs(children) do
+            data.instance.LayoutOrder = i
+        end
+    end
+    
+    window.SortContent = SortContent
+    
+    local function UpdateElementWidths()
+        local contentWidth = Content.AbsoluteSize.X - Scale(4)
+        local minWidth = Scale(160)
+        local cols = math.max(1, math.floor(contentWidth / minWidth))
+        local elemWidth = math.floor((contentWidth - (cols - 1) * Scale(4)) / cols)
+        
+        for _, child in pairs(Content:GetChildren()) do
+            if child:IsA("Frame") or child:IsA("TextButton") or child:IsA("TextLabel") then
+                if child:GetAttribute("FullWidth") then
+                    child.Size = UDim2.new(0, contentWidth, 0, child.Size.Y.Offset)
+                else
+                    child.Size = UDim2.new(0, elemWidth, 0, child.Size.Y.Offset)
+                end
+            end
+        end
+    end
+    
+    window.UpdateLayout = UpdateElementWidths
+    
+    Content:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+        task.defer(UpdateElementWidths)
+    end)
+    
+    local function SaveWindowState()
+        State.WindowPositions[windowId] = {
+            X = Frame.Position.X.Offset,
+            Y = Frame.Position.Y.Offset,
+            Width = Frame.Size.X.Offset,
+            Height = Frame.Size.Y.Offset
+        }
+        State.WindowVisibility[windowId] = Frame.Visible
+        SaveSettings()
+    end
+    
+    local dragging, dragStart, startPos = false, nil, nil
+    TitleBar.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = input.Position
+            startPos = Frame.Position
+        end
+    end)
+    TitleBar.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = false
+            SaveWindowState()
+        end
+    end)
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            local scale = GetCurrentScale()
+            local delta = input.Position - dragStart
+            Frame.Position = UDim2.new(0, startPos.X.Offset + delta.X / scale, 0, startPos.Y.Offset + delta.Y / scale)
+        end
+    end)
+    
+    local resizing, resizeStart, startSize = false, nil, nil
+    ResizeHandle.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            resizing = true
+            resizeStart = input.Position
+            startSize = Frame.Size
+        end
+    end)
+    ResizeHandle.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            resizing = false
+            SaveWindowState()
+        end
+    end)
+    UserInputService.InputChanged:Connect(function(input)
+        if resizing and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            local scale = GetCurrentScale()
+            local delta = input.Position - resizeStart
+            local newW = math.max(Scale(150), startSize.X.Offset + delta.X / scale)
+            local newH = math.max(Scale(80), startSize.Y.Offset + delta.Y / scale)
+            Frame.Size = UDim2.new(0, newW, 0, newH)
+        end
+    end)
+    
+    CloseBtn.MouseEnter:Connect(function() Tween(CloseBtn, {BackgroundColor3 = Colors.SurfaceLighter}, 0.1) end)
+    CloseBtn.MouseLeave:Connect(function() Tween(CloseBtn, {BackgroundColor3 = Colors.SurfaceLight}, 0.1) end)
+    CloseBtn.MouseButton1Click:Connect(function()
+        Frame.Visible = false
+        window.Visible = false
+        SaveWindowState()
+    end)
+    
+    Windows[windowId] = window
+    
+    task.defer(UpdateElementWidths)
+    
+    if State.WindowSortModes[windowId] then
+        task.defer(function()
+            SortContent(State.WindowSortModes[windowId])
+        end)
+    end
+    
+    return window
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- UI ELEMENTS
+-- ═══════════════════════════════════════════════════════════════
+
+local function AddToggle(window, config)
+    local id = config.Id or config.Text
+    local savedState = State.ConfigData[id]
+    local toggled = savedState ~= nil and savedState or (config.Default or false)
+    local legitScore = config.LegitScore or 0
+    
+    if not State.UsageStats[id] then
+        State.UsageStats[id] = {totalTime = 0, enableCount = 0, lastEnabled = nil}
+    end
+    
+    local Container = Instance.new("Frame")
+    Container.Name = "Toggle_" .. id
+    Container.Parent = window.Content
+    Container.BackgroundColor3 = Colors.Surface
+    Container.Size = UDim2.new(0, Scale(160), 0, Scale(34))
+    Container.LayoutOrder = config.Order or 0
+    Container.Visible = config.Parent == nil
+    Container:SetAttribute("LegitScore", legitScore)
+    Container:SetAttribute("ToggleId", id)
+    Instance.new("UICorner", Container).CornerRadius = UDim.new(0, Scale(5))
+    
+    local currentKeybind = State.ToggleKeybinds[id]
+    local KeybindBtn = Instance.new("TextButton")
+    KeybindBtn.Name = "KeybindBtn"
+    KeybindBtn.Parent = Container
+    KeybindBtn.BackgroundColor3 = Colors.SurfaceLighter
+    KeybindBtn.Position = UDim2.new(0, Scale(3), 0.5, 0)
+    KeybindBtn.Size = UDim2.new(0, Scale(16), 0, Scale(16))
+    KeybindBtn.AnchorPoint = Vector2.new(0, 0.5)
+    KeybindBtn.Text = currentKeybind and string.sub(currentKeybind, 1, 1) or ""
+    KeybindBtn.TextColor3 = currentKeybind and Colors.Accent or Colors.TextDim
+    KeybindBtn.TextSize = Scale(7)
+    KeybindBtn.Font = Enum.Font.GothamBold
+    KeybindBtn.AutoButtonColor = false
+    KeybindBtn.ZIndex = 4
+    Instance.new("UICorner", KeybindBtn).CornerRadius = UDim.new(0, Scale(3))
+    
+    local StarBtn = Instance.new("TextButton")
+    StarBtn.Parent = Container
+    StarBtn.BackgroundTransparency = 1
+    StarBtn.Position = UDim2.new(0, Scale(22), 0.5, 0)
+    StarBtn.Size = UDim2.new(0, Scale(12), 0, Scale(12))
+    StarBtn.AnchorPoint = Vector2.new(0, 0.5)
+    StarBtn.Text = State.Favorites[id] and "★" or "☆"
+    StarBtn.TextColor3 = State.Favorites[id] and Colors.Star or Colors.TextDim
+    StarBtn.TextSize = Scale(9)
+    StarBtn.Font = Enum.Font.GothamBold
+    StarBtn.ZIndex = 3
+    
+    local Label = Instance.new("TextLabel")
+    Label.Parent = Container
+    Label.BackgroundTransparency = 1
+    Label.Position = UDim2.new(0, Scale(36), 0, 0)
+    Label.Size = UDim2.new(1, Scale(-76), 1, 0)
+    Label.Font = Enum.Font.Gotham
+    Label.Text = config.Text or "Toggle"
+    Label.TextColor3 = Colors.Text
+    Label.TextSize = Scale(9)
+    Label.TextXAlignment = Enum.TextXAlignment.Left
+    Label.TextTruncate = Enum.TextTruncate.AtEnd
+    
+    local ToggleFrame = Instance.new("Frame")
+    ToggleFrame.Parent = Container
+    ToggleFrame.BackgroundColor3 = toggled and Colors.Accent or Colors.SurfaceLighter
+    ToggleFrame.Position = UDim2.new(1, Scale(-38), 0.5, 0)
+    ToggleFrame.Size = UDim2.new(0, Scale(32), 0, Scale(16))
+    ToggleFrame.AnchorPoint = Vector2.new(0, 0.5)
+    Instance.new("UICorner", ToggleFrame).CornerRadius = UDim.new(1, 0)
+    
+    local Circle = Instance.new("Frame")
+    Circle.Parent = ToggleFrame
+    Circle.BackgroundColor3 = toggled and Colors.Background or Colors.Text
+    Circle.Position = toggled and UDim2.new(1, Scale(-14), 0.5, 0) or UDim2.new(0, Scale(2), 0.5, 0)
+    Circle.Size = UDim2.new(0, Scale(12), 0, Scale(12))
+    Circle.AnchorPoint = Vector2.new(0, 0.5)
+    Instance.new("UICorner", Circle).CornerRadius = UDim.new(1, 0)
+    
+    local ClickBtn = Instance.new("TextButton")
+    ClickBtn.Parent = Container
+    ClickBtn.BackgroundTransparency = 1
+    ClickBtn.Position = UDim2.new(0, Scale(36), 0, 0)
+    ClickBtn.Size = UDim2.new(1, Scale(-36), 1, 0)
+    ClickBtn.Text = ""
+    ClickBtn.ZIndex = 2
+    
+    local childElements = {}
+    
+    local function UpdateToggle(state, skipCallback)
+        local wasToggled = toggled
+        toggled = state
+        State.ConfigData[id] = toggled
+        
+        ToggleFrame.BackgroundColor3 = toggled and Colors.Accent or Colors.SurfaceLighter
+        Circle.Position = toggled and UDim2.new(1, Scale(-14), 0.5, 0) or UDim2.new(0, Scale(2), 0.5, 0)
+        Circle.BackgroundColor3 = toggled and Colors.Background or Colors.Text
+        
+        if toggled and not wasToggled then
+            State.UsageStats[id].enableCount = (State.UsageStats[id].enableCount or 0) + 1
+            State.UsageStats[id].lastEnabled = os.time()
+        elseif not toggled and wasToggled then
+            if State.UsageStats[id].lastEnabled then
+                local timeEnabled = os.time() - State.UsageStats[id].lastEnabled
+                State.UsageStats[id].totalTime = (State.UsageStats[id].totalTime or 0) + timeEnabled
+                State.UsageStats[id].lastEnabled = nil
+            end
+        end
+        
+        State.LegitScores[id] = toggled and legitScore or 0
+        State.TotalLegitScore = 0
+        for _, s in pairs(State.LegitScores) do State.TotalLegitScore = State.TotalLegitScore + s end
+        
+        for _, child in pairs(childElements) do
+            child.Visible = toggled
+        end
+        
+        if not skipCallback and config.Callback then config.Callback(toggled) end
+        SaveSettings()
+    end
+    
+    KeybindBtn.MouseEnter:Connect(function() 
+        Tween(KeybindBtn, {BackgroundColor3 = Colors.SurfaceLighter}, 0.1)
+    end)
+    KeybindBtn.MouseLeave:Connect(function()
+        if ListeningForKeybind ~= id then
+            Tween(KeybindBtn, {BackgroundColor3 = Colors.SurfaceLighter}, 0.1)
+        end
+    end)
+    KeybindBtn.MouseButton1Click:Connect(function()
+        if ListeningForKeybind == id then
+            ListeningForKeybind = nil
+            KeybindBtn.Text = currentKeybind and string.sub(currentKeybind, 1, 1) or ""
+            KeybindBtn.TextColor3 = currentKeybind and Colors.Accent or Colors.TextDim
+            Tween(KeybindBtn, {BackgroundColor3 = Colors.SurfaceLighter}, 0.1)
+        else
+            ListeningForKeybind = id
+            KeybindBtn.Text = "..."
+            KeybindBtn.TextColor3 = Colors.Star
+            Tween(KeybindBtn, {BackgroundColor3 = Colors.Surface}, 0.1)
+        end
+    end)
+    KeybindBtn.MouseButton2Click:Connect(function()
+        State.ToggleKeybinds[id] = nil
+        currentKeybind = nil
+        KeybindBtn.Text = ""
+        KeybindBtn.TextColor3 = Colors.TextDim
+        ListeningForKeybind = nil
+        SaveSettings()
+    end)
+    
+    local toggleData = {
+        id = id,
+        keybindBtn = KeybindBtn,
+        updateKeybind = function(keyName)
+            currentKeybind = keyName
+            State.ToggleKeybinds[id] = keyName
+            KeybindBtn.Text = keyName and string.sub(keyName, 1, 1) or ""
+            KeybindBtn.TextColor3 = keyName and Colors.Accent or Colors.TextDim
+            SaveSettings()
+        end,
+        toggle = function()
+            UpdateToggle(not toggled)
+        end
+    }
+    
+    ClickBtn.MouseButton1Click:Connect(function() UpdateToggle(not toggled) end)
+    StarBtn.MouseButton1Click:Connect(function()
+        State.Favorites[id] = not State.Favorites[id]
+        StarBtn.Text = State.Favorites[id] and "★" or "☆"
+        StarBtn.TextColor3 = State.Favorites[id] and Colors.Star or Colors.TextDim
+        SaveSettings()
+        if FavoritesWindow and RefreshFavorites then RefreshFavorites() end
+    end)
+    
+    AllElements[id] = {
+        Type = "Toggle", 
+        Container = Container, 
+        Text = config.Text, 
+        GetValue = function() return toggled end, 
+        SetValue = UpdateToggle, 
+        LegitScore = legitScore, 
+        Config = config,
+        WindowId = window.Id,
+        ToggleData = toggleData,
+        AddChild = function(elem)
+            table.insert(childElements, elem)
+            elem.Visible = toggled
+        end
+    }
+    
+    -- Register as child of parent toggle (hide until parent is enabled)
+    if config.Parent and AllElements[config.Parent] and AllElements[config.Parent].AddChild then
+        AllElements[config.Parent].AddChild(Container)
+    end
+    
+    if savedState ~= nil and savedState ~= config.Default then
+        task.defer(function()
+            UpdateToggle(savedState, false)
+        end)
+    elseif toggled then
+        State.LegitScores[id] = legitScore
+        State.TotalLegitScore = 0
+        for _, s in pairs(State.LegitScores) do State.TotalLegitScore = State.TotalLegitScore + s end
+        if config.Callback then task.defer(function() config.Callback(toggled) end) end
+    end
+    
+    return Container
+end
+
+local function AddSlider(window, config)
+    local id = config.Id or config.Text
+    local min, max = config.Min or 0, config.Max or 100
+    local value = State.ConfigData[id] or config.Default or min
+    local legitScore = config.LegitScore or 0
+    
+    local Container = Instance.new("Frame")
+    Container.Name = "Slider_" .. id
+    Container.Parent = window.Content
+    Container.BackgroundColor3 = Colors.Surface
+    Container.Size = UDim2.new(0, Scale(160), 0, Scale(50))
+    Container.LayoutOrder = config.Order or 0
+    Container.ClipsDescendants = true
+    Container.Visible = config.Parent == nil
+    Container:SetAttribute("FullWidth", config.FullWidth or false)
+    Container:SetAttribute("LegitScore", legitScore)
+    Instance.new("UICorner", Container).CornerRadius = UDim.new(0, Scale(5))
+    
+    local StarBtn = Instance.new("TextButton")
+    StarBtn.Parent = Container
+    StarBtn.BackgroundTransparency = 1
+    StarBtn.Position = UDim2.new(0, Scale(4), 0, Scale(6))
+    StarBtn.Size = UDim2.new(0, Scale(14), 0, Scale(14))
+    StarBtn.Text = State.Favorites[id] and "★" or "☆"
+    StarBtn.TextColor3 = State.Favorites[id] and Colors.Star or Colors.TextDim
+    StarBtn.TextSize = Scale(10)
+    StarBtn.Font = Enum.Font.GothamBold
+    StarBtn.ZIndex = 3
+    
+    local Label = Instance.new("TextLabel")
+    Label.Parent = Container
+    Label.BackgroundTransparency = 1
+    Label.Position = UDim2.new(0, Scale(20), 0, Scale(2))
+    Label.Size = UDim2.new(1, Scale(-70), 0, Scale(20))
+    Label.Font = Enum.Font.Gotham
+    Label.Text = config.Text or "Slider"
+    Label.TextColor3 = Colors.Text
+    Label.TextSize = Scale(9)
+    Label.TextXAlignment = Enum.TextXAlignment.Left
+    Label.TextTruncate = Enum.TextTruncate.AtEnd
+    
+    local ValueLbl = Instance.new("TextLabel")
+    ValueLbl.Parent = Container
+    ValueLbl.BackgroundTransparency = 1
+    ValueLbl.Position = UDim2.new(1, Scale(-46), 0, Scale(2))
+    ValueLbl.Size = UDim2.new(0, Scale(40), 0, Scale(20))
+    ValueLbl.Font = Enum.Font.GothamBold
+    ValueLbl.Text = tostring(value)
+    ValueLbl.TextColor3 = Colors.Accent
+    ValueLbl.TextSize = Scale(10)
+    ValueLbl.TextXAlignment = Enum.TextXAlignment.Right
+    
+    local SliderBg = Instance.new("Frame")
+    SliderBg.Parent = Container
+    SliderBg.BackgroundColor3 = Colors.SurfaceLighter
+    SliderBg.Position = UDim2.new(0, Scale(6), 0, Scale(28))
+    SliderBg.Size = UDim2.new(1, Scale(-12), 0, Scale(14))
+    Instance.new("UICorner", SliderBg).CornerRadius = UDim.new(1, 0)
+    
+    local SliderFill = Instance.new("Frame")
+    SliderFill.Parent = SliderBg
+    SliderFill.BackgroundColor3 = Colors.Accent
+    SliderFill.Size = UDim2.new(math.clamp((value - min) / (max - min), 0, 1), 0, 1, 0)
+    Instance.new("UICorner", SliderFill).CornerRadius = UDim.new(1, 0)
+    
+    local SliderKnob = Instance.new("Frame")
+    SliderKnob.Parent = SliderBg
+    SliderKnob.BackgroundColor3 = Colors.Text
+    SliderKnob.Position = UDim2.new(math.clamp((value - min) / (max - min), 0, 1), 0, 0.5, 0)
+    SliderKnob.Size = UDim2.new(0, Scale(16), 0, Scale(16))
+    SliderKnob.AnchorPoint = Vector2.new(0.5, 0.5)
+    SliderKnob.ZIndex = 2
+    Instance.new("UICorner", SliderKnob).CornerRadius = UDim.new(1, 0)
+    
+    local sliderDragging = false
+    
+    local function UpdateValue(pct)
+        pct = math.clamp(pct, 0, 1)
+        value = math.floor(min + (max - min) * pct + 0.5)
+        ValueLbl.Text = tostring(value)
+        SliderFill.Size = UDim2.new(pct, 0, 1, 0)
+        SliderKnob.Position = UDim2.new(pct, 0, 0.5, 0)
+        State.ConfigData[id] = value
+        State.LegitScores[id] = legitScore * pct
+        State.TotalLegitScore = 0
+        for _, s in pairs(State.LegitScores) do State.TotalLegitScore = State.TotalLegitScore + s end
+        if config.Callback then config.Callback(value) end
+    end
+    
+    StarBtn.MouseButton1Click:Connect(function()
+        State.Favorites[id] = not State.Favorites[id]
+        StarBtn.Text = State.Favorites[id] and "★" or "☆"
+        StarBtn.TextColor3 = State.Favorites[id] and Colors.Star or Colors.TextDim
+        SaveSettings()
+        if FavoritesWindow and RefreshFavorites then RefreshFavorites() end
+    end)
+    
+    SliderBg.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            sliderDragging = true
+            UpdateValue((input.Position.X - SliderBg.AbsolutePosition.X) / SliderBg.AbsoluteSize.X)
+        end
+    end)
+    SliderBg.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then sliderDragging = false; SaveSettings() end
+    end)
+    UserInputService.InputChanged:Connect(function(input)
+        if sliderDragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            UpdateValue((input.Position.X - SliderBg.AbsolutePosition.X) / SliderBg.AbsoluteSize.X)
+        end
+    end)
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then sliderDragging = false end
+    end)
+    
+    if config.Parent and AllElements[config.Parent] and AllElements[config.Parent].AddChild then
+        AllElements[config.Parent].AddChild(Container)
+    end
+    
+    AllElements[id] = {Type = "Slider", Container = Container, Text = config.Text, Config = config, WindowId = window.Id}
+    return Container
+end
+
+local function AddDropdown(window, config)
+    local id = config.Id or config.Text
+    local options = config.Options or {}
+    local selected = State.ConfigData[id] or config.Default or (options[1] or "")
+    local isOpen = false
+    
+    local collapsedH = Scale(34)
+    local expandedH = Scale(38) + #options * Scale(26)
+    
+    local Container = Instance.new("Frame")
+    Container.Name = "Dropdown_" .. id
+    Container.Parent = window.Content
+    Container.BackgroundColor3 = Colors.Surface
+    Container.Size = UDim2.new(0, Scale(160), 0, collapsedH)
+    Container.ClipsDescendants = true
+    Container.LayoutOrder = config.Order or 0
+    Container.Visible = config.Parent == nil
+    Container:SetAttribute("FullWidth", config.FullWidth or false)
+    Instance.new("UICorner", Container).CornerRadius = UDim.new(0, Scale(5))
+    
+    local Label = Instance.new("TextLabel")
+    Label.Parent = Container
+    Label.BackgroundTransparency = 1
+    Label.Position = UDim2.new(0, Scale(6), 0, 0)
+    Label.Size = UDim2.new(0.4, 0, 0, Scale(34))
+    Label.Font = Enum.Font.Gotham
+    Label.Text = config.Text or "Dropdown"
+    Label.TextColor3 = Colors.Text
+    Label.TextSize = Scale(9)
+    Label.TextXAlignment = Enum.TextXAlignment.Left
+    
+    local SelBtn = Instance.new("TextButton")
+    SelBtn.Parent = Container
+    SelBtn.BackgroundColor3 = Colors.SurfaceLighter
+    SelBtn.Position = UDim2.new(0.4, Scale(2), 0, Scale(4))
+    SelBtn.Size = UDim2.new(0.6, Scale(-8), 0, Scale(26))
+    SelBtn.Font = Enum.Font.Gotham
+    SelBtn.Text = selected .. " ▼"
+    SelBtn.TextColor3 = Colors.Text
+    SelBtn.TextSize = Scale(9)
+    SelBtn.AutoButtonColor = false
+    Instance.new("UICorner", SelBtn).CornerRadius = UDim.new(0, Scale(4))
+    
+    local OptionsFrame = Instance.new("Frame")
+    OptionsFrame.Parent = Container
+    OptionsFrame.BackgroundTransparency = 1
+    OptionsFrame.Position = UDim2.new(0, Scale(4), 0, Scale(36))
+    OptionsFrame.Size = UDim2.new(1, Scale(-8), 0, #options * Scale(26))
+    
+    local OptionsLayout = Instance.new("UIListLayout")
+    OptionsLayout.Padding = UDim.new(0, Scale(2))
+    OptionsLayout.Parent = OptionsFrame
+    
+    for _, opt in ipairs(options) do
+        local OptBtn = Instance.new("TextButton")
+        OptBtn.Parent = OptionsFrame
+        OptBtn.BackgroundColor3 = Colors.SurfaceLighter
+        OptBtn.Size = UDim2.new(1, 0, 0, Scale(24))
+        OptBtn.Font = Enum.Font.Gotham
+        OptBtn.Text = opt
+        OptBtn.TextColor3 = Colors.Text
+        OptBtn.TextSize = Scale(9)
+        OptBtn.AutoButtonColor = false
+        Instance.new("UICorner", OptBtn).CornerRadius = UDim.new(0, Scale(4))
+        
+        OptBtn.MouseEnter:Connect(function() Tween(OptBtn, {BackgroundColor3 = Colors.Accent, TextColor3 = Colors.Background}, 0.1) end)
+        OptBtn.MouseLeave:Connect(function() Tween(OptBtn, {BackgroundColor3 = Colors.SurfaceLighter, TextColor3 = Colors.Text}, 0.1) end)
+        OptBtn.MouseButton1Click:Connect(function()
+            selected = opt
+            SelBtn.Text = selected .. " ▼"
+            isOpen = false
+            Tween(Container, {Size = UDim2.new(0, Container.Size.X.Offset, 0, collapsedH)}, 0.2)
+            State.ConfigData[id] = selected
+            SaveSettings()
+            if config.Callback then config.Callback(selected) end
+        end)
+    end
+    
+    SelBtn.MouseButton1Click:Connect(function()
+        isOpen = not isOpen
+        Tween(Container, {Size = UDim2.new(0, Container.Size.X.Offset, 0, isOpen and expandedH or collapsedH)}, 0.2)
+    end)
+    
+    if config.Parent and AllElements[config.Parent] and AllElements[config.Parent].AddChild then
+        AllElements[config.Parent].AddChild(Container)
+    end
+    
+    return Container
+end
+
+local function AddButton(window, config)
+    local Button = Instance.new("TextButton")
+    Button.Name = "Button_" .. (config.Text or "")
+    Button.Parent = window.Content
+    Button.BackgroundColor3 = Colors.Surface
+    Button.Size = UDim2.new(0, Scale(160), 0, Scale(34))
+    Button.Font = Enum.Font.GothamSemibold
+    Button.Text = config.Text or "Button"
+    Button.TextColor3 = Colors.Text
+    Button.TextSize = Scale(10)
+    Button.AutoButtonColor = false
+    Button.LayoutOrder = config.Order or 0
+    Button:SetAttribute("FullWidth", config.FullWidth or false)
+    Instance.new("UICorner", Button).CornerRadius = UDim.new(0, Scale(5))
+    
+    Button.MouseEnter:Connect(function() Tween(Button, {BackgroundColor3 = Colors.Accent, TextColor3 = Colors.Background}, 0.15) end)
+    Button.MouseLeave:Connect(function() Tween(Button, {BackgroundColor3 = Colors.Surface, TextColor3 = Colors.Text}, 0.15) end)
+    Button.MouseButton1Click:Connect(function() if config.Callback then config.Callback() end end)
+    return Button
+end
+
+local function AddLabel(window, config)
+    local Lbl = Instance.new("TextLabel")
+    Lbl.Parent = window.Content
+    Lbl.BackgroundColor3 = Colors.Surface
+    Lbl.BackgroundTransparency = 0.5
+    Lbl.Size = UDim2.new(0, Scale(160), 0, Scale(22))
+    Lbl.Font = Enum.Font.GothamBold
+    Lbl.Text = config.Text or ""
+    Lbl.TextColor3 = Colors.TextDim
+    Lbl.TextSize = Scale(9)
+    Lbl.LayoutOrder = config.Order or 0
+    Lbl:SetAttribute("FullWidth", true)
+    Instance.new("UICorner", Lbl).CornerRadius = UDim.new(0, Scale(4))
+    return Lbl
+end
+
+local function AddInput(window, config)
+    local id = config.Id or config.Text
+    local value = State.ConfigData[id] or config.Default or ""
+    
+    local Container = Instance.new("Frame")
+    Container.Name = "Input_" .. id
+    Container.Parent = window.Content
+    Container.BackgroundColor3 = Colors.Surface
+    Container.Size = UDim2.new(0, Scale(160), 0, Scale(34))
+    Container.LayoutOrder = config.Order or 0
+    Container:SetAttribute("FullWidth", config.FullWidth or false)
+    Instance.new("UICorner", Container).CornerRadius = UDim.new(0, Scale(5))
+    
+    local Label = Instance.new("TextLabel")
+    Label.Parent = Container
+    Label.BackgroundTransparency = 1
+    Label.Position = UDim2.new(0, Scale(6), 0, 0)
+    Label.Size = UDim2.new(0.35, 0, 1, 0)
+    Label.Font = Enum.Font.Gotham
+    Label.Text = config.Text or "Input"
+    Label.TextColor3 = Colors.Text
+    Label.TextSize = Scale(9)
+    Label.TextXAlignment = Enum.TextXAlignment.Left
+    
+    local InputBox = Instance.new("TextBox")
+    InputBox.Parent = Container
+    InputBox.BackgroundColor3 = Colors.SurfaceLighter
+    InputBox.Position = UDim2.new(0.35, Scale(2), 0, Scale(4))
+    InputBox.Size = UDim2.new(0.65, Scale(-8), 0, Scale(26))
+    InputBox.Font = Enum.Font.Gotham
+    InputBox.Text = value
+    InputBox.PlaceholderText = config.Placeholder or "..."
+    InputBox.PlaceholderColor3 = Colors.TextDim
+    InputBox.TextColor3 = Colors.Text
+    InputBox.TextSize = Scale(9)
+    InputBox.ClearTextOnFocus = false
+    Instance.new("UICorner", InputBox).CornerRadius = UDim.new(0, Scale(4))
+    
+    InputBox.FocusLost:Connect(function()
+        value = InputBox.Text
+        State.ConfigData[id] = value
+        SaveSettings()
+        if config.Callback then config.Callback(value) end
+    end)
+    
+    return Container
+end
+
+local function AddKeybind(window, config)
+    local id = config.Id or config.Text
+    local key = State.ConfigData[id] or config.Default or "None"
+    local listening = false
+    
+    local Container = Instance.new("Frame")
+    Container.Name = "Keybind_" .. id
+    Container.Parent = window.Content
+    Container.BackgroundColor3 = Colors.Surface
+    Container.Size = UDim2.new(0, Scale(160), 0, Scale(34))
+    Container.LayoutOrder = config.Order or 0
+    Container:SetAttribute("FullWidth", config.FullWidth or false)
+    Instance.new("UICorner", Container).CornerRadius = UDim.new(0, Scale(5))
+    
+    local Label = Instance.new("TextLabel")
+    Label.Parent = Container
+    Label.BackgroundTransparency = 1
+    Label.Position = UDim2.new(0, Scale(6), 0, 0)
+    Label.Size = UDim2.new(0.5, 0, 1, 0)
+    Label.Font = Enum.Font.Gotham
+    Label.Text = config.Text or "Keybind"
+    Label.TextColor3 = Colors.Text
+    Label.TextSize = Scale(9)
+    Label.TextXAlignment = Enum.TextXAlignment.Left
+    
+    local KeyBtn = Instance.new("TextButton")
+    KeyBtn.Parent = Container
+    KeyBtn.BackgroundColor3 = Colors.SurfaceLighter
+    KeyBtn.Position = UDim2.new(0.5, Scale(2), 0, Scale(4))
+    KeyBtn.Size = UDim2.new(0.5, Scale(-8), 0, Scale(26))
+    KeyBtn.Font = Enum.Font.GothamBold
+    KeyBtn.Text = key
+    KeyBtn.TextColor3 = Colors.Text
+    KeyBtn.TextSize = Scale(9)
+    KeyBtn.AutoButtonColor = false
+    Instance.new("UICorner", KeyBtn).CornerRadius = UDim.new(0, Scale(4))
+    
+    KeyBtn.MouseButton1Click:Connect(function()
+        listening = true
+        KeyBtn.Text = "..."
+        KeyBtn.TextColor3 = Colors.Accent
+    end)
+    
+    UserInputService.InputBegan:Connect(function(input, processed)
+        if listening and input.UserInputType == Enum.UserInputType.Keyboard then
+            listening = false
+            key = input.KeyCode.Name
+            KeyBtn.Text = key
+            KeyBtn.TextColor3 = Colors.Text
+            State.ConfigData[id] = key
+            SaveSettings()
+            if config.Callback then config.Callback(key) end
+        end
+    end)
+    
+    return Container
+end
+
+local function AddColorPicker(window, config)
+    local id = config.Id or config.Text
+    local color = State.ConfigData[id] and Color3.fromHex(State.ConfigData[id]) or config.Default or Color3.new(1,1,1)
+    
+    local Container = Instance.new("Frame")
+    Container.Name = "Color_" .. id
+    Container.Parent = window.Content
+    Container.BackgroundColor3 = Colors.Surface
+    Container.Size = UDim2.new(0, Scale(160), 0, Scale(34))
+    Container.LayoutOrder = config.Order or 0
+    Container:SetAttribute("FullWidth", config.FullWidth or false)
+    Instance.new("UICorner", Container).CornerRadius = UDim.new(0, Scale(5))
+    
+    local Label = Instance.new("TextLabel")
+    Label.Parent = Container
+    Label.BackgroundTransparency = 1
+    Label.Position = UDim2.new(0, Scale(6), 0, 0)
+    Label.Size = UDim2.new(0.6, 0, 1, 0)
+    Label.Font = Enum.Font.Gotham
+    Label.Text = config.Text or "Color"
+    Label.TextColor3 = Colors.Text
+    Label.TextSize = Scale(9)
+    Label.TextXAlignment = Enum.TextXAlignment.Left
+    
+    local ColorBox = Instance.new("Frame")
+    ColorBox.Parent = Container
+    ColorBox.BackgroundColor3 = color
+    ColorBox.Position = UDim2.new(1, Scale(-38), 0.5, 0)
+    ColorBox.Size = UDim2.new(0, Scale(32), 0, Scale(20))
+    ColorBox.AnchorPoint = Vector2.new(0, 0.5)
+    Instance.new("UICorner", ColorBox).CornerRadius = UDim.new(0, Scale(4))
+    Instance.new("UIStroke", ColorBox).Color = Colors.Border
+    
+    return Container
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- TAB BUTTONS
+-- ═══════════════════════════════════════════════════════════════
+
+local function CreateTabButton(name, windowId)
+    local Btn = Instance.new("TextButton")
+    Btn.Name = name
+    Btn.Parent = TabContainer
+    Btn.BackgroundColor3 = Colors.Surface
+    Btn.Size = UDim2.new(0, Scale(55), 0, Scale(28))
+    Btn.Text = name
+    Btn.TextColor3 = Colors.Text
+    Btn.TextSize = Scale(9)
+    Btn.Font = Enum.Font.GothamSemibold
+    Btn.AutoButtonColor = false
+    Btn.ZIndex = 2
+    Instance.new("UICorner", Btn).CornerRadius = UDim.new(0, Scale(5))
+    
+    Btn.MouseEnter:Connect(function() Tween(Btn, {BackgroundColor3 = Colors.SurfaceLight}, 0.1) end)
+    Btn.MouseLeave:Connect(function() Tween(Btn, {BackgroundColor3 = Colors.Surface}, 0.1) end)
+    Btn.MouseButton1Click:Connect(function()
+        if Windows[windowId] then
+            Windows[windowId].Frame.Visible = not Windows[windowId].Frame.Visible
+            Windows[windowId].Visible = Windows[windowId].Frame.Visible
+            State.WindowVisibility[windowId] = Windows[windowId].Frame.Visible
+            SaveSettings()
+        end
+    end)
+    return Btn
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- BUILT-IN: FAVORITES TAB
+-- ═══════════════════════════════════════════════════════════════
+
+CreateTabButton("Favs", "Favorites")
+FavoritesWindow = CreateWindow({Id = "Favorites", Title = "★ Favorites", Width = 340, Height = 220, Visible = false})
+
+local RefreshFavorites
+function RefreshFavorites()
+    for _, child in pairs(FavoritesWindow.Content:GetChildren()) do
+        if not child:IsA("UIListLayout") then child:Destroy() end
+    end
+    local count = 0
+    for id, isFav in pairs(State.Favorites) do
+        if isFav and AllElements[id] then
+            count = count + 1
+            local elem = AllElements[id]
+            if elem.Type == "Toggle" then
+                AddToggle(FavoritesWindow, {Text = elem.Text, Id = id .. "_fav", Default = State.ConfigData[id], LegitScore = elem.LegitScore or 0, Order = count,
+                    Callback = function(v) State.ConfigData[id] = v; if elem.SetValue then elem.SetValue(v) end; if elem.Config and elem.Config.Callback then elem.Config.Callback(v) end end})
+            elseif elem.Type == "Slider" then
+                AddSlider(FavoritesWindow, {Text = elem.Text, Id = id .. "_fav", Default = State.ConfigData[id], Min = elem.Config.Min, Max = elem.Config.Max, LegitScore = elem.Config.LegitScore or 0, Order = count,
+                    Callback = function(v) State.ConfigData[id] = v; if elem.Config and elem.Config.Callback then elem.Config.Callback(v) end end})
+            end
+        end
+    end
+    if count == 0 then
+        local EmptyLbl = Instance.new("TextLabel")
+        EmptyLbl.Parent = FavoritesWindow.Content
+        EmptyLbl.BackgroundTransparency = 1
+        EmptyLbl.Size = UDim2.new(0, Scale(160), 0, Scale(34))
+        EmptyLbl.Font = Enum.Font.Gotham
+        EmptyLbl.Text = "Star items to add favorites"
+        EmptyLbl.TextColor3 = Colors.TextDim
+        EmptyLbl.TextSize = Scale(9)
+    end
+    task.defer(function() FavoritesWindow.UpdateLayout() end)
+end
+RefreshFavorites()
+
+-- ═══════════════════════════════════════════════════════════════
+-- UNIVERSAL INPUT HELPERS
+-- ═══════════════════════════════════════════════════════════════
+
+local function pressKey(keyCode)
+    if IsMobile then
+        VirtualInputManager:SendKeyEvent(true, keyCode, false, game)
+    else
+        if keypress then
+            keypress(keyCode)
+        else
+            VirtualInputManager:SendKeyEvent(true, keyCode, false, game)
+        end
+    end
+end
+
+local function releaseKey(keyCode)
+    if IsMobile then
+        VirtualInputManager:SendKeyEvent(false, keyCode, false, game)
+    else
+        if keyrelease then
+            keyrelease(keyCode)
+        else
+            VirtualInputManager:SendKeyEvent(false, keyCode, false, game)
+        end
+    end
+end
+
+local function pressKeyTap(keyCode, holdTime)
+    holdTime = holdTime or 0.05
+    pressKey(keyCode)
+    task.wait(holdTime)
+    releaseKey(keyCode)
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- BUILT-IN: SETTINGS WINDOW
+-- ═══════════════════════════════════════════════════════════════
+
+local settingsWin = CreateWindow({Id = "Settings", Title = "⚙ Settings", Width = 380, Height = 500, Visible = false})
+
+SettingsBtn.MouseButton1Click:Connect(function()
+    settingsWin.Frame.Visible = not settingsWin.Frame.Visible
+    settingsWin.Visible = settingsWin.Frame.Visible
+    State.WindowVisibility["Settings"] = settingsWin.Frame.Visible
+    SaveSettings()
+end)
+
+AddLabel(settingsWin, {Text = "APPEARANCE", Order = 1})
+AddToggle(settingsWin, {Text = "Blur Effect", Id = "BlurEnabled", Default = State.BlurEnabled, Order = 2,
+    Callback = function(v) State.BlurEnabled = v; UpdateBlur(); SaveSettings() end})
+
+do
+    local id = "GUIScale"
+    local min, max = 50, 200
+    local value = State.GUIScale or 100
+    local displayValue = value
+    
+    local Container = Instance.new("Frame")
+    Container.Name = "Slider_" .. id
+    Container.Parent = settingsWin.Content
+    Container.BackgroundColor3 = Colors.Surface
+    Container.Size = UDim2.new(0, Scale(160), 0, Scale(50))
+    Container.LayoutOrder = 3
+    Container.ClipsDescendants = true
+    Instance.new("UICorner", Container).CornerRadius = UDim.new(0, Scale(5))
+    
+    local Label = Instance.new("TextLabel")
+    Label.Parent = Container
+    Label.BackgroundTransparency = 1
+    Label.Position = UDim2.new(0, Scale(6), 0, Scale(2))
+    Label.Size = UDim2.new(1, Scale(-70), 0, Scale(20))
+    Label.Font = Enum.Font.Gotham
+    Label.Text = "GUI Scale %"
+    Label.TextColor3 = Colors.Text
+    Label.TextSize = Scale(9)
+    Label.TextXAlignment = Enum.TextXAlignment.Left
+    
+    local ValueLbl = Instance.new("TextLabel")
+    ValueLbl.Parent = Container
+    ValueLbl.BackgroundTransparency = 1
+    ValueLbl.Position = UDim2.new(1, Scale(-46), 0, Scale(2))
+    ValueLbl.Size = UDim2.new(0, Scale(40), 0, Scale(20))
+    ValueLbl.Font = Enum.Font.GothamBold
+    ValueLbl.Text = tostring(value)
+    ValueLbl.TextColor3 = Colors.Accent
+    ValueLbl.TextSize = Scale(10)
+    ValueLbl.TextXAlignment = Enum.TextXAlignment.Right
+    
+    local SliderBg = Instance.new("Frame")
+    SliderBg.Parent = Container
+    SliderBg.BackgroundColor3 = Colors.SurfaceLighter
+    SliderBg.Position = UDim2.new(0, Scale(6), 0, Scale(28))
+    SliderBg.Size = UDim2.new(1, Scale(-12), 0, Scale(14))
+    Instance.new("UICorner", SliderBg).CornerRadius = UDim.new(1, 0)
+    
+    local SliderFill = Instance.new("Frame")
+    SliderFill.Parent = SliderBg
+    SliderFill.BackgroundColor3 = Colors.Accent
+    SliderFill.Size = UDim2.new(math.clamp((value - min) / (max - min), 0, 1), 0, 1, 0)
+    Instance.new("UICorner", SliderFill).CornerRadius = UDim.new(1, 0)
+    
+    local SliderKnob = Instance.new("Frame")
+    SliderKnob.Parent = SliderBg
+    SliderKnob.BackgroundColor3 = Colors.Text
+    SliderKnob.Position = UDim2.new(math.clamp((value - min) / (max - min), 0, 1), 0, 0.5, 0)
+    SliderKnob.Size = UDim2.new(0, Scale(16), 0, Scale(16))
+    SliderKnob.AnchorPoint = Vector2.new(0.5, 0.5)
+    SliderKnob.ZIndex = 2
+    Instance.new("UICorner", SliderKnob).CornerRadius = UDim.new(1, 0)
+    
+    local sliderDragging = false
+    
+    local function UpdateVisuals(pct)
+        pct = math.clamp(pct, 0, 1)
+        displayValue = math.floor(min + (max - min) * pct + 0.5)
+        ValueLbl.Text = tostring(displayValue)
+        SliderFill.Size = UDim2.new(pct, 0, 1, 0)
+        SliderKnob.Position = UDim2.new(pct, 0, 0.5, 0)
+        PendingGUIScale = displayValue
+    end
+    
+    local function ApplyScaleChange()
+        value = displayValue
+        State.ConfigData[id] = value
+        ApplyGUIScale(value)
+    end
+    
+    SliderBg.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            sliderDragging = true
+            UpdateVisuals((input.Position.X - SliderBg.AbsolutePosition.X) / SliderBg.AbsoluteSize.X)
+        end
+    end)
+    SliderBg.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            sliderDragging = false
+            ApplyScaleChange()
+        end
+    end)
+    UserInputService.InputChanged:Connect(function(input)
+        if sliderDragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            UpdateVisuals((input.Position.X - SliderBg.AbsolutePosition.X) / SliderBg.AbsoluteSize.X)
+        end
+    end)
+    UserInputService.InputEnded:Connect(function(input)
+        if (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) and sliderDragging then
+            sliderDragging = false
+            ApplyScaleChange()
+        end
+    end)
+end
+
+AddColorPicker(settingsWin, {Text = "Accent Color", Id = "AccentColor", Default = Colors.Accent, Order = 4})
+
+AddLabel(settingsWin, {Text = "KEYBINDS", Order = 5})
+AddKeybind(settingsWin, {Text = "Toggle GUI", Id = "ToggleGUIKey", Default = "RightShift", Order = 6,
+    Callback = function(key) pcall(function() State.ToggleKey = Enum.KeyCode[key] end) end})
+
+AddLabel(settingsWin, {Text = "CONFIGS", Order = 7})
+AddInput(settingsWin, {Text = "Config Name", Id = "ConfigName", Placeholder = "my_config", Order = 8})
+AddButton(settingsWin, {Text = "Save Config", Order = 9, Callback = function()
+    local name = State.ConfigData["ConfigName"] or "default"
+    if name ~= "" then SaveConfig(name); print("[OT Hub] Saved config: " .. name) end
+end})
+AddDropdown(settingsWin, {Text = "Load Config", Id = "LoadConfig", Options = GetConfigs(), Order = 10,
+    Callback = function(name) LoadConfig(name); print("[OT Hub] Loaded config: " .. name) end})
+AddButton(settingsWin, {Text = "Delete Config", Order = 11, Callback = function()
+    local name = State.ConfigData["LoadConfig"]
+    if name then DeleteConfig(name); print("[OT Hub] Deleted config: " .. name) end
+end})
+AddInput(settingsWin, {Text = "Auto-Load", Id = "AutoLoad", Placeholder = "config name", Default = State.AutoLoadConfig, Order = 12,
+    Callback = function(name) SetAutoLoad(name) end})
+
+-- ═══════════════════════════════════════════════════════════════
+-- TOGGLE GUI & KEYBINDS
+-- ═══════════════════════════════════════════════════════════════
+
+UserInputService.InputBegan:Connect(function(input, processed)
+    if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
+    
+    if ListeningForKeybind then
+        local keyName = input.KeyCode.Name
+        for id, elem in pairs(AllElements) do
+            if id == ListeningForKeybind and elem.ToggleData then
+                elem.ToggleData.updateKeybind(keyName)
+                elem.ToggleData.keybindBtn.Text = string.sub(keyName, 1, 1)
+                elem.ToggleData.keybindBtn.TextColor3 = Colors.Accent
+                Tween(elem.ToggleData.keybindBtn, {BackgroundColor3 = Colors.SurfaceLighter}, 0.1)
+                break
+            end
+        end
+        ListeningForKeybind = nil
+        return
+    end
+    
+    local toggleMatch = false
+    if typeof(State.ToggleKey) == "EnumItem" then
+        toggleMatch = (input.KeyCode == State.ToggleKey)
+    else
+        toggleMatch = (input.KeyCode.Name == tostring(State.ToggleKey))
+    end
+    
+    if toggleMatch then
+        State.Visible = not State.Visible
+        ScreenGui.Enabled = State.Visible
+        UpdateBlur()
+        return
+    end
+    
+    if processed then return end
+    
+    local keyName = input.KeyCode.Name
+    for id, boundKey in pairs(State.ToggleKeybinds) do
+        if boundKey == keyName then
+            local elem = AllElements[id]
+            if elem and elem.ToggleData then
+                elem.ToggleData.toggle()
+            end
+        end
+    end
+end)
+
+UpdateBlur()
+
+-- ═══════════════════════════════════════════════════════════════
+-- AUTO-SAVE & USAGE TRACKING
+-- ═══════════════════════════════════════════════════════════════
+
+task.spawn(function()
+    while task.wait(10) do
+        local currentTime = os.time()
+        for id, elem in pairs(AllElements) do
+            if elem.Type == "Toggle" and elem.GetValue and elem.GetValue() then
+                if State.UsageStats[id] and State.UsageStats[id].lastEnabled then
+                    local elapsed = currentTime - State.UsageStats[id].lastEnabled
+                    State.UsageStats[id].totalTime = (State.UsageStats[id].totalTime or 0) + elapsed
+                    State.UsageStats[id].lastEnabled = currentTime
+                end
+            end
+        end
+        SaveSettings()
+    end
+end)
+
+game:BindToClose(function()
+    local currentTime = os.time()
+    for id, elem in pairs(AllElements) do
+        if elem.Type == "Toggle" and elem.GetValue and elem.GetValue() then
+            if State.UsageStats[id] and State.UsageStats[id].lastEnabled then
+                local elapsed = currentTime - State.UsageStats[id].lastEnabled
+                State.UsageStats[id].totalTime = (State.UsageStats[id].totalTime or 0) + elapsed
+            end
+        end
+    end
+    SaveSettings()
+end)
+
+-- ═══════════════════════════════════════════════════════════════
+-- MOBILE SUPPORT
+-- ═══════════════════════════════════════════════════════════════
+
+if IsMobile then
+    State.BlurEnabled = false
+    Blur.Size = 0
+    
+    if State.GUIScale > 50 then
+        State.GUIScale = 50
+        PendingGUIScale = 50
+    end
+    GUIScaleObject.Scale = State.GUIScale / InitialGUIScale
+    
+    TopBar.Position = UDim2.new(0.5, 0, 0, Scale(8))
+    TopBar.AnchorPoint = Vector2.new(0.5, 0)
+    
+    local topBarExpanded = true
+    local LogoBtn = Instance.new("TextButton")
+    LogoBtn.Name = "LogoBtn"
+    LogoBtn.Parent = TopBar
+    LogoBtn.BackgroundTransparency = 1
+    LogoBtn.Position = UDim2.new(0, 0, 0, 0)
+    LogoBtn.Size = UDim2.new(0, Scale(68), 1, 0)
+    LogoBtn.Text = ""
+    LogoBtn.ZIndex = 10
+    
+    LogoBtn.MouseButton1Click:Connect(function()
+        topBarExpanded = not topBarExpanded
+        if topBarExpanded then
+            TabContainer.Visible = true
+            RightContainer.Visible = true
+            Divider1.Visible = true
+            TopBar.Size = UDim2.new(0, Scale(700), 0, Scale(44))
+        else
+            TabContainer.Visible = false
+            RightContainer.Visible = false
+            Divider1.Visible = false
+            TopBar.Size = UDim2.new(0, Scale(68), 0, Scale(44))
+        end
+    end)
+    
+    local persistGui = Instance.new("ScreenGui")
+    persistGui.Name = "OTGUI_MobileBtn"
+    persistGui.Parent = CoreGui
+    persistGui.ResetOnSpawn = false
+    persistGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    persistGui.IgnoreGuiInset = true
+    pcall(function() if syn and syn.protect_gui then syn.protect_gui(persistGui) end end)
+    
+    local MobileToggleBtn = Instance.new("TextButton")
+    MobileToggleBtn.Name = "MobileToggle"
+    MobileToggleBtn.Parent = persistGui
+    MobileToggleBtn.BackgroundColor3 = Colors.Background
+    MobileToggleBtn.Size = UDim2.new(0, 44, 0, 44)
+    MobileToggleBtn.Position = UDim2.new(0, 6, 0.45, 0)
+    MobileToggleBtn.Text = "✕"
+    MobileToggleBtn.TextColor3 = Colors.Text
+    MobileToggleBtn.TextSize = 18
+    MobileToggleBtn.Font = Enum.Font.GothamBold
+    MobileToggleBtn.AutoButtonColor = false
+    MobileToggleBtn.ZIndex = 100
+    Instance.new("UICorner", MobileToggleBtn).CornerRadius = UDim.new(0, 10)
+    local mobileStroke = Instance.new("UIStroke", MobileToggleBtn)
+    mobileStroke.Color = Colors.Accent
+    mobileStroke.Thickness = 2
+    
+    local draggingMobile = false
+    local dragStartMobile, startPosMobile
+    
+    MobileToggleBtn.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+            draggingMobile = true
+            dragStartMobile = input.Position
+            startPosMobile = MobileToggleBtn.Position
+        end
+    end)
+    MobileToggleBtn.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+            if draggingMobile then
+                local delta = input.Position - dragStartMobile
+                if math.abs(delta.X) < 8 and math.abs(delta.Y) < 8 then
+                    State.Visible = not State.Visible
+                    ScreenGui.Enabled = State.Visible
+                    MobileToggleBtn.Text = State.Visible and "✕" or "OT"
+                    mobileStroke.Color = State.Visible and Colors.Accent or Colors.Border
+                end
+            end
+            draggingMobile = false
+        end
+    end)
+    UserInputService.InputChanged:Connect(function(input)
+        if draggingMobile and (input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseMovement) then
+            local delta = input.Position - dragStartMobile
+            MobileToggleBtn.Position = UDim2.new(startPosMobile.X.Scale, startPosMobile.X.Offset + delta.X, startPosMobile.Y.Scale, startPosMobile.Y.Offset + delta.Y)
+        end
+    end)
+    
+    for _, win in pairs(Windows) do
+        if win.Frame then
+            local winDragging = false
+            local winDragStart, winStartPos
+            
+            local titleBar = win.Frame:FindFirstChild("TitleBar")
+            if titleBar then
+                titleBar.InputBegan:Connect(function(input)
+                    if input.UserInputType == Enum.UserInputType.Touch then
+                        winDragging = true
+                        winDragStart = input.Position
+                        winStartPos = win.Frame.Position
+                    end
+                end)
+                titleBar.InputEnded:Connect(function(input)
+                    if input.UserInputType == Enum.UserInputType.Touch then winDragging = false end
+                end)
+                UserInputService.InputChanged:Connect(function(input)
+                    if winDragging and input.UserInputType == Enum.UserInputType.Touch then
+                        local scale = GetCurrentScale()
+                        local delta = input.Position - winDragStart
+                        win.Frame.Position = UDim2.new(winStartPos.X.Scale, winStartPos.X.Offset + delta.X / scale, winStartPos.Y.Scale, winStartPos.Y.Offset + delta.Y / scale)
+                    end
+                end)
+            end
+        end
+    end
+end
+
+print("[OTGUI] Library v3.0.0 loaded! " .. (IsMobile and "(Mobile mode)" or "Press RightShift to toggle GUI"))
+
+-- ═══════════════════════════════════════════════════════════════
+-- RETURN LIBRARY OBJECT
+-- ═══════════════════════════════════════════════════════════════
+
+local Library = {}
+
+function Library:CreateWindow(config) return CreateWindow(config) end
+function Library:CreateTab(name, windowId) return CreateTabButton(name, windowId) end
+function Library:AddToggle(window, config) return AddToggle(window, config) end
+function Library:AddSlider(window, config) return AddSlider(window, config) end
+function Library:AddDropdown(window, config) return AddDropdown(window, config) end
+function Library:AddButton(window, config) return AddButton(window, config) end
+function Library:AddLabel(window, config) return AddLabel(window, config) end
+function Library:AddInput(window, config) return AddInput(window, config) end
+function Library:AddKeybind(window, config) return AddKeybind(window, config) end
+function Library:AddColorPicker(window, config) return AddColorPicker(window, config) end
+function Library:GetElement(id) return AllElements[id] end
+
+Library.pressKey = pressKey
+Library.releaseKey = releaseKey
+Library.pressKeyTap = pressKeyTap
+Library.IsMobile = IsMobile
+Library.State = State
+Library.Player = Player
+
+return Library
+
+end -- end CreateOTGUI
+
+return CreateOTGUI()
